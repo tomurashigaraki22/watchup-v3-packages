@@ -1,0 +1,46 @@
+{
+  "name": "@watchupltd/nextjs",
+  "version": "0.1.1",
+  "description": "Official Watchup SDK for Next.js — App Router provider, server singleton, and route wrapper",
+  "license": "MIT",
+  "author": "Watchup Ltd",
+  "exports": {
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.mjs",
+      "require": "./dist/client/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsup --watch"
+  },
+  "peerDependencies": {
+    "@watchupltd/browser": "^0.1.0",
+    "@watchupltd/node": "^0.1.0",
+    "@watchupltd/react": "^0.1.0",
+    "next": ">=14.0.0",
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@watchupltd/browser": "*",
+    "@watchupltd/node": "*",
+    "@watchupltd/react": "*",
+    "next": "^14.2.3",
+    "react": "^18.3.1",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5"
+  }
+}

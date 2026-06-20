@@ -1,0 +1,35 @@
+{
+  "name": "@watchupltd/svelte",
+  "version": "0.1.0",
+  "description": "Official Watchup SDK for Svelte / SvelteKit — provider, context, and actions",
+  "license": "MIT",
+  "author": "Watchup Ltd",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types":   "./dist/index.d.ts",
+      "import":  "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./WatchupProvider.svelte": "./src/WatchupProvider.svelte"
+  },
+  "files": ["dist", "src/WatchupProvider.svelte", "README.md"],
+  "sideEffects": ["./src/WatchupProvider.svelte"],
+  "scripts": {
+    "build":     "tsup",
+    "typecheck": "tsc --noEmit",
+    "dev":       "tsup --watch"
+  },
+  "peerDependencies": {
+    "@watchupltd/browser": "^0.1.0",
+    "svelte": ">=4.0.0"
+  },
+  "devDependencies": {
+    "@watchupltd/browser": "*",
+    "svelte":              "^4.2.18",
+    "tsup":                "^8.0.2",
+    "typescript":          "^5.4.5"
+  }
+}

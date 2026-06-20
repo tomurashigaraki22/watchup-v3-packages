@@ -1,0 +1,16 @@
+{
+  "name": "watchup-sdk-packages",
+  "private": true,
+  "workspaces": [
+    "node",
+    "browser",
+    "react",
+    "nextjs",
+    "svelte"
+  ],
+  "scripts": {
+    "build":     "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev":       "npm run dev --workspaces --if-present"
+  }
+}

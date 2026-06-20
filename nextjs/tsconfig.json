@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target":           "ES2019",
+    "lib":              ["ES2019", "DOM", "DOM.Iterable"],
+    "module":           "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx":              "react-jsx",
+    "strict":           true,
+    "skipLibCheck":     true,
+    "declaration":      true,
+    "declarationMap":   true,
+    "sourceMap":        true,
+    "outDir":           "dist",
+    "paths": {
+      "next/navigation":    ["./node_modules/next/dist/client/components/navigation.js"],
+      "next/navigation.js": ["./node_modules/next/dist/client/components/navigation.js"],
+      "next/server":        ["./node_modules/next/dist/server/web/exports/index.js"],
+      "next/server.js":     ["./node_modules/next/dist/server/web/exports/index.js"],
+      "@watchupltd/node":   ["../node/src/index.ts"],
+      "@watchupltd/browser":["../browser/src/index.ts"],
+      "@watchupltd/react":  ["../react/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

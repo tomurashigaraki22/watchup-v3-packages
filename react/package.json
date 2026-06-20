@@ -1,0 +1,35 @@
+{
+  "name": "@watchupltd/react",
+  "version": "0.1.0",
+  "description": "Official Watchup SDK for React — provider, error boundary, and hooks",
+  "license": "MIT",
+  "author": "Watchup Ltd",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types":   "./dist/index.d.ts",
+      "import":  "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "scripts": {
+    "build":     "tsup",
+    "typecheck": "tsc --noEmit",
+    "dev":       "tsup --watch"
+  },
+  "peerDependencies": {
+    "@watchupltd/browser": "^0.1.0",
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react":       "^18.3.3",
+    "@watchupltd/browser": "*",
+    "react":              "^18.3.1",
+    "tsup":               "^8.0.2",
+    "typescript":         "^5.4.5"
+  }
+}
