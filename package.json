@@ -6,7 +6,8 @@
     "browser",
     "react",
     "nextjs",
-    "svelte"
+    "svelte",
+    "mcp"
   ],
   "scripts": {
     "build":     "npm run build --workspaces --if-present",
