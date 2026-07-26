@@ -33,9 +33,12 @@ Or run it with `npx` from your MCP client:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WATCHUP_API_URL` | `https://api.watchup.site` | WatchUp API base URL. |
-| `WATCHUP_TOKEN` | required | Bearer token used to call WatchUp. Do not use an SDK ingest key. |
+| `WATCHUP_TOKEN` | optional | Dedicated MCP or personal bearer token used to call WatchUp. Required for write tools. |
+| `WATCHUP_PROJECT_API_KEY` | optional | Project API key fallback for read-only project-scoped tools. |
 | `WATCHUP_DEFAULT_PROJECT_ID` | optional | Project used when a tool call omits `project_id`. |
 | `WATCHUP_READ_ONLY` | `true` | Set to `false` to enable write tools. |
+
+Set either `WATCHUP_TOKEN` or `WATCHUP_PROJECT_API_KEY`. Project API keys are always treated as read-only MCP credentials and cannot create community posts, bug reports, or feature flags.
 
 ## Tools
 

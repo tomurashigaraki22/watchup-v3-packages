@@ -21,6 +21,7 @@ const DEFAULT_API_URL = "https://api.watchup.site";
 const env = {
   apiUrl: normalizeBaseUrl(process.env.WATCHUP_API_URL || DEFAULT_API_URL),
   token: process.env.WATCHUP_TOKEN || "",
+  projectApiKey: process.env.WATCHUP_PROJECT_API_KEY || process.env.WATCHUP_API_KEY || "",
   defaultProjectId: process.env.WATCHUP_DEFAULT_PROJECT_ID || "",
   readOnly: process.env.WATCHUP_READ_ONLY !== "false",
 };
@@ -53,15 +54,20 @@ function optionalProjectId(projectId?: string): string {
   return resolved;
 }
 
-function assertToken(): void {
-  if (!env.token) {
+function assertReadable(): void {
+  if (!env.token && !env.projectApiKey) {
     throw new Error(
-      "WATCHUP_TOKEN is required. Set it in your MCP client environment before starting @watchupltd/mcp.",
+      "WATCHUP_TOKEN or WATCHUP_PROJECT_API_KEY is required. Set one in your MCP client environment before starting @watchupltd/mcp.",
     );
   }
 }
 
 function assertWritable(): void {
+  if (env.projectApiKey) {
+    throw new Error(
+      "Project API keys are read-only in WatchUp MCP. Use a dedicated MCP token in WATCHUP_TOKEN for write tools.",
+    );
+  }
   if (env.readOnly) {
     throw new Error(
       "This WatchUp MCP server is running in read-only mode. Set WATCHUP_READ_ONLY=false to enable write tools.",
@@ -82,10 +88,10 @@ function query(params: Record<string, string | number | boolean | undefined>): s
 
 class WatchUpApi {
   async request(path: string, init: RequestInit = {}): Promise<unknown> {
-    assertToken();
+    assertReadable();
 
     const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${env.token}`);
+    headers.set("Authorization", `Bearer ${env.token || env.projectApiKey}`);
     headers.set("Accept", "application/json");
 
     if (init.body && !headers.has("Content-Type")) {
@@ -160,10 +166,11 @@ server.tool(
   {},
   async () =>
     json({
-      ok: Boolean(env.token),
+      ok: Boolean(env.token || env.projectApiKey),
       api_url: env.apiUrl,
+      auth_mode: env.token ? "mcp_token" : "project_api_key",
       default_project_id: env.defaultProjectId || null,
-      read_only: env.readOnly,
+      read_only: env.readOnly || Boolean(env.projectApiKey),
       package: "@watchupltd/mcp",
     }),
 );
