@@ -7,7 +7,7 @@
   "homepage": "https://watchup.site",
   "repository": {
     "type": "git",
-    "url": "https://github.com/watchupltd/watchup-sdk"
+    "url": "git+https://github.com/watchupltd/watchup-sdk.git"
   },
   "keywords": [
     "watchup",
@@ -21,7 +21,7 @@
     "cli"
   ],
   "bin": {
-    "create-watchup": "./bin/create-watchup.js"
+    "create-watchup": "bin/create-watchup.js"
   },
   "files": [
     "bin",
