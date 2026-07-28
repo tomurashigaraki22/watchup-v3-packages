@@ -4,12 +4,14 @@ const { installPackages } = require("./package-manager");
 const { ask, confirm } = require("./prompts");
 const { installNext } = require("./installers/next");
 const { installReact } = require("./installers/react");
+const { installReactNative } = require("./installers/react-native");
 const { installNode } = require("./installers/node");
 const { installExpress } = require("./installers/express");
 
 const installers = {
   next: installNext,
   react: installReact,
+  "react-native": installReactNative,
   node: installNode,
   express: installExpress,
 };
@@ -36,7 +38,7 @@ Usage:
   npx create-watchup@latest [framework] [options]
 
 Frameworks:
-  next, react, node, express
+  next, react, react-native, node, express
 
 Options:
   --api-key <key>   WatchUp project API key
@@ -56,11 +58,11 @@ async function main(argv) {
   let framework = args.framework || detectFramework(cwd);
 
   if (!framework) {
-    framework = await ask("Which framework? (next/react/node/express) ");
+    framework = await ask("Which framework? (next/react/react-native/node/express) ");
   }
 
   if (!installers[framework]) {
-    throw new Error(`Unsupported framework "${framework}". Use next, react, node, or express.`);
+    throw new Error(`Unsupported framework "${framework}". Use next, react, react-native, node, or express.`);
   }
 
   const apiKey = args.apiKey || await ask("WatchUp API key (leave blank to add placeholder): ", "");

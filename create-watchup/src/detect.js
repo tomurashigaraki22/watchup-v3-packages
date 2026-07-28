@@ -18,6 +18,7 @@ function detectFramework(cwd) {
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
 
   if (deps.next || exists(cwd, "next.config.js") || exists(cwd, "next.config.mjs")) return "next";
+  if (deps["react-native"] || deps.expo || exists(cwd, "app.json") || exists(cwd, "app.config.js") || exists(cwd, "app.config.ts")) return "react-native";
   if (deps.express) return "express";
   if (deps.react || exists(cwd, "vite.config.js") || exists(cwd, "vite.config.ts")) return "react";
   if (pkg) return "node";
