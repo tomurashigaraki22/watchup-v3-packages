@@ -7,8 +7,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Watchup as NodeWatchup, type WatchupOptions } from '@watchupltd/node';
+import { createNoopWatchup } from './noop.js';
 
 let _instance: NodeWatchup | null = null;
+let _warnedMissingApiKey = false;
 
 /**
  * Returns the shared server-side Watchup instance, creating it on first call.
@@ -32,10 +34,15 @@ export function initWatchup(options?: Partial<WatchupOptions>): NodeWatchup {
   if (!_instance) {
     const apiKey = options?.apiKey ?? process.env.WATCHUP_API_KEY ?? '';
     if (!apiKey) {
-      throw new Error(
-        '[watchup] Server SDK requires an apiKey. ' +
-        'Pass it to initWatchup() or set WATCHUP_API_KEY env var.',
-      );
+      if (!_warnedMissingApiKey) {
+        console.warn(
+          '[watchup] Server SDK disabled because no apiKey was provided. ' +
+          'Pass apiKey to initWatchup() or set WATCHUP_API_KEY to enable monitoring.',
+        );
+        _warnedMissingApiKey = true;
+      }
+      _instance = createNoopWatchup();
+      return _instance;
     }
     _instance = new NodeWatchup({
       environment: process.env.NODE_ENV,

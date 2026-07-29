@@ -17,6 +17,7 @@ import React, {
 import { usePathname, useSearchParams } from 'next/navigation.js';
 import { Watchup, type WatchupOptions } from '@watchupltd/browser';
 import { WatchupContext } from '@watchupltd/react';
+import { createNoopWatchup } from './noop.js';
 
 export interface WatchupNextProviderProps {
   /** Watchup project API key. */
@@ -51,6 +52,16 @@ export function WatchupProvider({
   children,
 }: WatchupNextProviderProps) {
   const instanceRef = useRef<Watchup | null>(null);
+
+  if (!instanceRef.current && !apiKey) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[watchup] Client SDK disabled because no apiKey was provided. ' +
+        'Pass apiKey to <WatchupProvider> to enable monitoring.',
+      );
+    }
+    instanceRef.current = createNoopWatchup();
+  }
 
   if (!instanceRef.current) {
     instanceRef.current = new Watchup({
