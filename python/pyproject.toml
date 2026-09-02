@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "watchup"
+version = "0.3.0"
+description = "Official Watchup SDK for Python — error tracking, request tracing, and custom analytics"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Watchup Ltd" }]
+requires-python = ">=3.9"
+keywords = [
+  "watchup",
+  "monitoring",
+  "observability",
+  "apm",
+  "tracing",
+  "error-tracking",
+  "flask",
+  "django",
+  "fastapi",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: System :: Monitoring",
+]
+
+# No required dependencies — stdlib only.
+# Framework integrations (Flask, Django) import lazily and raise ImportError
+# with a helpful message if the framework is not installed.
+dependencies = []
+
+[project.optional-dependencies]
+flask   = ["flask>=2.0"]
+django  = ["django>=3.2"]
+fastapi = ["fastapi>=0.95", "starlette>=0.27"]
+dev     = ["pytest>=8", "flask>=2.0", "responses>=0.25"]
+
+[project.urls]
+Homepage      = "https://watchup.site"
+Documentation = "https://watchup.site/docs/sdks/python"
+Repository    = "https://github.com/watchupltd/watchup-sdk"
+Issues        = "https://github.com/watchupltd/watchup-sdk/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["watchup*"]
