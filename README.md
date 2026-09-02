@@ -143,17 +143,22 @@ export default function RootLayout({ children }) {
 </WatchupProvider>
 ```
 
-### Python / Flask
+### Python
 
 ```python
+import os
 from flask import Flask
-from watchup import Watchup
+from watchup import Watchup, WatchupASGI
 
-watchup = Watchup(api_key="wup_live_xxxxxxxxxxxx")
+watchup = Watchup(api_key=os.environ["WATCHUP_API_KEY"])
 app = Flask(__name__)
 
-watchup.init_app(app)   # request tracing + error capture wired automatically
+watchup.init_app(app)   # Flask request tracing + error capture
+
+# FastAPI / Starlette: app.add_middleware(WatchupASGI, watchup_client=watchup)
 ```
+
+The Python SDK also supports Django middleware, framework-agnostic WSGI, manual errors/events/traces, structured logs, feature flags, and graceful shutdown. See the [Python SDK documentation](https://watchup.site/docs/sdks/python).
 
 ### .NET / ASP.NET Core
 

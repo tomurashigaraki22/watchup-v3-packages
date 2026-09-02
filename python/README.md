@@ -66,7 +66,7 @@ WATCHUP_ENVIRONMENT = "production"  # optional
 WATCHUP_RELEASE     = "v1.2.3"     # optional
 ```
 
-The middleware creates one client for the middleware instance and reuses it for the lifetime of the process.
+The middleware creates one client when Django constructs the middleware and reuses it for the lifetime of that middleware instance.
 
 ---
 
@@ -91,6 +91,8 @@ The middleware captures exceptions as errors and re-raises them. Do not add a se
 ## WSGI middleware (framework-agnostic)
 
 ```python
+import os
+
 from watchup import Watchup, WatchupWSGI
 
 watchup = Watchup(api_key="wup_live_xxxxxxxxxxxx")
