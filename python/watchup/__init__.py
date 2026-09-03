@@ -25,4 +25,4 @@ from .client import Watchup
 from .middleware import WatchupASGI, WatchupDjangoMiddleware, WatchupWSGI
 
 __all__ = ["Watchup", "WatchupASGI", "WatchupDjangoMiddleware", "WatchupWSGI"]
-__version__ = "0.3.0"
+__version__ = "2.0.0"

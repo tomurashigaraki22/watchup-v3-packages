@@ -63,6 +63,20 @@ def _request_context(method: str, path: str, **extra: Any) -> Dict[str, Any]:
     return context
 
 
+def _flask_request_context(request: Any, path: str) -> Dict[str, Any]:
+    """Capture useful request metadata while excluding credentials/bodies."""
+    safe_headers = {
+        name: request.headers.get(name)
+        for name in ("Accept", "Content-Type", "Origin", "Referer", "X-Request-ID", "X-Correlation-ID")
+        if request.headers.get(name)
+    }
+    return {"request": _request_context(
+        request.method, path, url=request.base_url,
+        user_agent=request.headers.get("User-Agent"),
+        remote_addr=request.remote_addr, headers=safe_headers,
+    )}
+
+
 # ── Flask integration ─────────────────────────────────────────────────────────
 
 def _flask_init_app(watchup_client: "Watchup", app: Any) -> None:
@@ -100,11 +114,8 @@ def _flask_init_app(watchup_client: "Watchup", app: Any) -> None:
             environment=watchup_client.environment,
             release=watchup_client.release,
             meta=_request_context(
-                request.method,
-                _normalise_path(request.path),
-                url=request.base_url,
-                user_agent=request.headers.get("User-Agent"),
-                remote_addr=request.remote_addr,
+                request.method, _normalise_path(request.path),
+                **_flask_request_context(request, _normalise_path(request.path))["request"],
             ),
             user=watchup_client._user_dict(),
         )
@@ -116,15 +127,10 @@ def _flask_init_app(watchup_client: "Watchup", app: Any) -> None:
         error = ErrorPayload(
             message=str(exc),
             level="error",
+            error_type=type(exc).__name__,
             route=f"{request.method} {_normalise_path(request.path)}",
-            stack=traceback.format_exc(),
-            context=_request_context(
-                request.method,
-                _normalise_path(request.path),
-                url=request.base_url,
-                user_agent=request.headers.get("User-Agent"),
-                remote_addr=request.remote_addr,
-            ),
+            stack="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+            context=_flask_request_context(request, _normalise_path(request.path)),
             timestamp=_now(),
             environment=watchup_client.environment,
             release=watchup_client.release,

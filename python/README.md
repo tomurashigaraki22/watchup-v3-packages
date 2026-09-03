@@ -48,6 +48,11 @@ watchup.init_app(app)   # registers before_request, after_request, errorhandler 
 - **Error capture** — unhandled exceptions are reported with stack trace and request context
 - **Transparent re-raise** — errors still propagate to your own error handlers
 
+Captured Flask exceptions include the exception class, full traceback, normalized
+route, URL, user-agent, client address, request identifiers, and a safe subset of
+request headers. Authorization, cookies, query strings, and request bodies are
+never copied into telemetry.
+
 ---
 
 ## Django

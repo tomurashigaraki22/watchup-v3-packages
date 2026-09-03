@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "watchup"
-version = "0.3.0"
+version = "2.0.0"
 description = "Official Watchup SDK for Python — error tracking, request tracing, and custom analytics"
 readme = "README.md"
 license = { text = "MIT" }

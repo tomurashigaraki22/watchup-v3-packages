@@ -66,6 +66,7 @@ class ErrorPayload:
     message: str
     level: Literal["debug", "info", "warning", "error", "fatal"]
     timestamp: str
+    error_type: Optional[str] = None
     route: Optional[str] = None
     stack: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
@@ -81,6 +82,8 @@ class ErrorPayload:
         }
         if self.route is not None:
             d["route"] = self.route
+        if self.error_type is not None:
+            d["type"] = self.error_type
         if self.stack is not None:
             d["stack"] = self.stack
         if self.context:

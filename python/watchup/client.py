@@ -299,6 +299,7 @@ class Watchup:
             level=normalized_level,
             route=route,
             stack=stack,
+            error_type=type(error).__name__ if isinstance(error, BaseException) else None,
             context=context or None,
             timestamp=_now(),
             environment=self.environment,
