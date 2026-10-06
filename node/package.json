@@ -1,6 +1,6 @@
 {
   "name": "@watchupltd/node",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "Official Watchup SDK for Node.js and Express",
   "license": "MIT",
   "author": "Watchup Ltd",

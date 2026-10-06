@@ -10,4 +10,7 @@ export type {
   ErrorPayload,
   EventPayload,
   IngestBatch,
+  LogContext,
+  LogLevel,
+  LoggingOptions,
 } from './types.js';

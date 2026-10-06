@@ -8,12 +8,21 @@ export {
   useWatchup,
   useTrack,
   useStartTrace,
+  useIdentify,
+  useFlag,
+  useVariant,
   WatchupErrorBoundary,
 } from '@watchupltd/react';
 
 export type {
   WatchupOptions,
+  WatchupUser,
   TracePayload,
   ErrorPayload,
   EventPayload,
+  LogContext,
+  LogLevel,
+  LoggingOptions,
+  FeatureFlag,
+  FlagContext,
 } from '@watchupltd/browser';

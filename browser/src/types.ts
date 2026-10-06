@@ -2,6 +2,30 @@
 // @watchupltd/browser  ·  types
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface WatchupUser {
+  /** Your app's internal user ID — the only required field. */
+  id: string | number;
+  email?: string;
+  name?: string;
+  /** Any extra key/value pairs you want attached to events. */
+  [key: string]: unknown;
+}
+
+/** Log levels for structured browser logs. */
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error' | 'critical';
+
+/** Explicit, privacy-aware controls for browser logging. */
+export interface LoggingOptions {
+  /** Enable `captureLog()`. Default: `false`. */
+  enabled?: boolean;
+  /** Capture console calls only when logging is enabled. Default: `false`. */
+  captureConsole?: boolean;
+  /** Attach non-sensitive browser and viewport context to log events. Default: `false`. */
+  includeDeviceContext?: boolean;
+  /** Lowest severity that is sent. Default: `'debug'`. */
+  minLevel?: LogLevel;
+}
+
 export interface WatchupOptions {
   /**
    * Your project's **public** API key from the Watchup dashboard.
@@ -48,6 +72,9 @@ export interface WatchupOptions {
      */
     pageViews?: boolean;
   };
+
+  /** Explicit, opt-in structured browser logging. */
+  logging?: LoggingOptions;
 }
 
 // ── Ingest payload shapes ─────────────────────────────────────────────────────
@@ -61,6 +88,7 @@ export interface TracePayload {
   environment?: string;
   release?:    string;
   meta?:       Record<string, unknown>;
+  user?:       WatchupUser;
 }
 
 export interface ErrorPayload {
@@ -72,12 +100,47 @@ export interface ErrorPayload {
   timestamp:   string;
   environment?: string;
   release?:    string;
+  user?:       WatchupUser;
 }
 
 export interface EventPayload {
   name:        string;
   properties?: Record<string, unknown>;
   occurred_at: string;
+}
+
+export type LogContext = Record<string, unknown> & {
+  level?: LogLevel;
+  route?: string;
+};
+
+export interface FlagVariant {
+  key: string;
+  weight: number;
+}
+
+export interface FlagTargetingRule {
+  attribute: string;
+  operator: 'in' | 'not_in' | 'contains' | 'equals';
+  values: string[];
+}
+
+export interface FeatureFlag {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  rollout_percentage: number;
+  variants: FlagVariant[];
+  targeting_rules: FlagTargetingRule[];
+}
+
+export interface FlagContext {
+  userId?: string | number;
+  email?: string;
+  plan?: string;
+  [key: string]: unknown;
 }
 
 export interface IngestBatch {

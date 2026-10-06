@@ -1,6 +1,6 @@
 {
   "name": "@watchupltd/browser",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "Official Watchup SDK for browsers — analytics, errors, and performance",
   "license": "MIT",
   "author": "Watchup Ltd",

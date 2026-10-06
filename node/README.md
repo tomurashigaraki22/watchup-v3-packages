@@ -33,6 +33,10 @@ const watchup = new Watchup({
   apiKey:      process.env.WATCHUP_API_KEY!,   // wup_live_xxxxxxxxxxxx
   environment: process.env.NODE_ENV,
   release:     process.env.GIT_SHA,            // optional — correlate errors to deploys
+  logging: {
+    enabled: true,
+    captureConsole: true,
+  },
 });
 
 const app = express();
@@ -82,6 +86,9 @@ app.listen(3000);
 | `maxBatchSize` | `number` | `100` | Triggers an immediate flush when reached. |
 | `sampleRate` | `number` (0–1) | `1` | Fraction of requests captured as traces. |
 | `debug` | `boolean` | `false` | Logs SDK warnings and HTTP errors to `console.warn`. |
+| `logging.enabled` | `boolean` | `false` | Enables structured application logs. |
+| `logging.captureConsole` | `boolean` | `false` | Captures `console.debug/info/log/warn/error` as logs. Requires `logging.enabled`. |
+| `logging.minLevel` | `LogLevel` | `debug` | Lowest console or structured-log severity sent. |
 
 ---
 
@@ -132,6 +139,31 @@ try {
   });
 }
 ```
+
+---
+
+### Console capture
+
+Console capture is opt-in. The original console methods continue to write to
+stdout/stderr, while Watchup sends a structured log event in the background.
+
+```ts
+const watchup = new Watchup({
+  apiKey: process.env.WATCHUP_API_KEY!,
+  logging: {
+    enabled: true,
+    captureConsole: true,
+    minLevel: 'info',
+  },
+});
+
+console.log('User logged in', { userId: 'user-123' });
+console.warn('Payment retry scheduled');
+console.error(new Error('Provider timeout'));
+```
+
+Call `watchup.shutdown()` during graceful process shutdown so the final batch
+has time to leave the process.
 
 ---
 
@@ -205,6 +237,17 @@ Set it as an environment variable:
 ```bash
 WATCHUP_API_KEY=wup_live_xxxxxxxxxxxx node server.js
 ```
+
+---
+
+## Links
+
+- **Website:** [watchup.site](https://watchup.site)
+- **Documentation:** [watchup.site/docs](https://watchup.site/docs)
+- **Node.js SDK docs:** [watchup.site/docs/sdks/node](https://watchup.site/docs/sdks/node)
+- **Getting started:** [watchup.site/docs/getting-started](https://watchup.site/docs/getting-started)
+- **Pricing:** [watchup.site/pricing](https://watchup.site/pricing)
+- **Dashboard:** [app.watchup.site](https://watchup.site/login)
 
 ---
 

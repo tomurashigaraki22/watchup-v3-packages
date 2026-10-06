@@ -4,15 +4,46 @@
 
 import type {
   WatchupOptions,
+  WatchupUser,
   TracePayload,
   ErrorPayload,
   EventPayload,
   WebAnalyticsPayload,
+  FeatureFlag,
+  FlagContext,
+  LogContext,
+  LogLevel,
+  LoggingOptions,
 } from './types.js';
 import { Transport }            from './transport.js';
 import { Batcher }              from './batcher.js';
 import { captureGlobalErrors }  from './error-capture.js';
 import { captureFCP, captureLCP, capturePageLoad } from './perf.js';
+
+// ── Flag evaluation helpers ───────────────────────────────────────────────────
+
+function flagBucket(flagKey: string, userId: string): number {
+  const str = `${flagKey}:${userId}`;
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash * 33) ^ str.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0) % 100;
+}
+
+function matchesTargeting(flag: FeatureFlag, ctx: FlagContext): boolean {
+  if (!flag.targeting_rules?.length) return true;
+  return flag.targeting_rules.every(rule => {
+    const val = String(ctx[rule.attribute] ?? '');
+    switch (rule.operator) {
+      case 'in':       return rule.values.includes(val);
+      case 'not_in':   return !rule.values.includes(val);
+      case 'contains': return rule.values.some(v => val.includes(v));
+      case 'equals':   return rule.values[0] === val;
+      default:         return true;
+    }
+  });
+}
 
 const DEFAULTS = {
   baseUrl:       'https://api.watchup.site',
@@ -27,7 +58,17 @@ const DEFAULTS = {
     performance: true,
     pageViews:   true,
   },
+  logging: {
+    enabled: false,
+    captureConsole: false,
+    includeDeviceContext: false,
+    minLevel: 'debug',
+  },
 } as const;
+
+const LOG_LEVEL_WEIGHT: Record<LogLevel, number> = {
+  debug: 10, info: 20, warning: 30, error: 40, critical: 50,
+};
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
@@ -37,9 +78,10 @@ const SESSION_KEY = '__wup_sid';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class Watchup {
-  private readonly cfg:     Required<WatchupOptions>;
+  private readonly cfg:     Required<WatchupOptions> & { logging: Required<LoggingOptions> };
   private readonly batcher: Batcher;
   private readonly cleanup: Array<() => void> = [];
+  private _user: WatchupUser | null = null;
 
   /**
    * A random UUID generated on init.  Stable for the lifetime of the page —
@@ -62,6 +104,10 @@ export class Watchup {
    */
   private readonly webSessionId: string;
 
+  // Feature flags
+  private _flags: Map<string, FeatureFlag> = new Map();
+  private _flagTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(options: WatchupOptions) {
     if (!options.apiKey) {
       throw new Error('[watchup] apiKey is required.');
@@ -69,9 +115,10 @@ export class Watchup {
 
     this.cfg = {
       ...DEFAULTS,
-      autoCapture: { ...DEFAULTS.autoCapture, ...options.autoCapture },
       ...options,
-    } as Required<WatchupOptions>;
+      autoCapture: { ...DEFAULTS.autoCapture, ...options.autoCapture },
+      logging: { ...DEFAULTS.logging, ...options.logging },
+    } as Required<WatchupOptions> & { logging: Required<LoggingOptions> };
 
     const transport = new Transport(this.cfg.baseUrl, this.cfg.apiKey, this.cfg.debug);
     this.batcher    = new Batcher(transport, this.cfg.flushInterval, this.cfg.maxBatchSize);
@@ -82,6 +129,32 @@ export class Watchup {
     this.webSessionId = this._getOrCreateSessionId();
 
     this._setupAutoCapture();
+    this._setupConsoleCapture();
+
+    // Fetch flags immediately, then poll every 30 seconds
+    this._fetchFlags();
+    this._flagTimer = setInterval(() => this._fetchFlags(), 30_000);
+    this.cleanup.push(() => {
+      if (this._flagTimer) clearInterval(this._flagTimer);
+    });
+  }
+
+  private async _fetchFlags(): Promise<void> {
+    try {
+      const res = await fetch(`${this.cfg.baseUrl}/api/v1/flags`, {
+        headers: { 'X-Api-Key': this.cfg.apiKey },
+      });
+      if (!res.ok) return;
+      const json = await res.json() as { ok: boolean; data?: { flags: FeatureFlag[] } };
+      if (json.ok && json.data?.flags) {
+        this._flags.clear();
+        for (const flag of json.data.flags) {
+          this._flags.set(flag.key, flag);
+        }
+      }
+    } catch {
+      // silently ignore — stale cache is fine
+    }
   }
 
   // ── Visitor / session identity helpers ─────────────────────────────────────
@@ -111,6 +184,26 @@ export class Watchup {
     } catch {
       return this.sessionId; // fallback: correlate with SDK sessionId
     }
+  }
+
+  // ── User identification ───────────────────────────────────────────────────
+
+  /**
+   * Attach a user to all subsequent errors, traces, and events.
+   * Call this after login; the context persists until `clearUser()` or page reload.
+   *
+   * @example
+   * watchup.setUser({ id: '42', email: 'ada@example.com', name: 'Ada Lovelace' });
+   */
+  setUser(user: WatchupUser): void {
+    this._user = { ...user };
+  }
+
+  /**
+   * Remove the current user context (e.g. after logout).
+   */
+  clearUser(): void {
+    this._user = null;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -197,9 +290,36 @@ export class Watchup {
       timestamp:   new Date().toISOString(),
       environment: this.cfg.environment,
       ...(this.cfg.release && { release: this.cfg.release }),
+      ...(this._user        && { user: this._user }),
     };
 
     this.batcher.addError(payload);
+  }
+
+  /**
+   * Send an opt-in structured browser log. Logs use the events stream so they
+   * never increase the project's error count or trigger error-rate alerts.
+   */
+  captureLog(message: string, context: LogContext = {}): void {
+    const { level = 'info', route, ...rest } = context;
+    if (!this.cfg.logging.enabled || LOG_LEVEL_WEIGHT[level] < LOG_LEVEL_WEIGHT[this.cfg.logging.minLevel]) return;
+
+    const properties: Record<string, unknown> = {
+      message,
+      level,
+      source: 'browser',
+      route: route ?? window.location.pathname,
+      url: window.location.href,
+      ...(this._user && { user: this._user }),
+      ...rest,
+    };
+    if (this.cfg.logging.includeDeviceContext) properties.device = this._deviceContext();
+
+    this.batcher.addEvent({
+      name: `log.${level}`,
+      properties,
+      occurred_at: new Date().toISOString(),
+    });
   }
 
   /**
@@ -226,8 +346,57 @@ export class Watchup {
         environment: this.cfg.environment,
         ...(this.cfg.release && { release: this.cfg.release }),
         ...(opts.meta        && { meta: opts.meta }),
+        ...(this._user       && { user: this._user }),
       });
     };
+  }
+
+  // ── Feature flags ─────────────────────────────────────────────────────────
+
+  /**
+   * Check whether a feature flag is enabled. Evaluated locally — zero
+   * network latency. Flag rules refresh every 30 seconds in the background.
+   * Falls back to the identified user (via `setUser`) when no context is given.
+   *
+   * @example
+   * if (watchup.isEnabled('new-checkout')) {
+   *   renderNewCheckout();
+   * }
+   */
+  isEnabled(key: string, ctx: FlagContext = {}): boolean {
+    const flag = this._flags.get(key);
+    if (!flag || !flag.enabled) return false;
+    const mergedCtx: FlagContext = { userId: this._user?.id, email: this._user?.email, ...ctx };
+    if (!matchesTargeting(flag, mergedCtx)) return false;
+    if (flag.rollout_percentage >= 100) return true;
+    if (flag.rollout_percentage <= 0)   return false;
+    const userId = String(mergedCtx.userId ?? mergedCtx.email ?? this.visitorId);
+    return flagBucket(key, userId) < flag.rollout_percentage;
+  }
+
+  /**
+   * Get the variant key for a multivariate (A/B) flag.
+   * Returns `"control"` if the flag is off or the visitor isn't in the rollout.
+   *
+   * @example
+   * const variant = watchup.getVariant('pricing-layout');
+   * // → "control" | "variant-a" | "variant-b"
+   */
+  getVariant(key: string, ctx: FlagContext = {}): string {
+    if (!this.isEnabled(key, ctx)) return 'control';
+    const flag = this._flags.get(key)!;
+    if (!flag.variants?.length) return 'on';
+
+    const mergedCtx: FlagContext = { userId: this._user?.id, email: this._user?.email, ...ctx };
+    const userId = String(mergedCtx.userId ?? mergedCtx.email ?? this.visitorId);
+    const bucket = flagBucket(key, userId);
+
+    let cumulative = 0;
+    for (const variant of flag.variants) {
+      cumulative += variant.weight;
+      if (bucket < cumulative) return variant.key;
+    }
+    return flag.variants[flag.variants.length - 1]!.key;
   }
 
   /** Immediately flush all queued items (both telemetry and web analytics). */
@@ -260,6 +429,47 @@ export class Watchup {
     if (autoCapture.pageViews) {
       this._setupPageViewTracking();
     }
+  }
+
+  private _setupConsoleCapture(): void {
+    if (!this.cfg.logging.enabled || !this.cfg.logging.captureConsole) return;
+
+    const levels: Array<['debug' | 'info' | 'warn' | 'error', LogLevel]> = [
+      ['debug', 'debug'],
+      ['info', 'info'],
+      ['warn', 'warning'],
+      ['error', 'error'],
+    ];
+
+    for (const [method, level] of levels) {
+      const original = console[method] as (...args: unknown[]) => void;
+
+      const wrapped = (...args: unknown[]) => {
+        original.apply(console, args);
+        this.captureLog(this._consoleMessage(args), { level, console: true });
+      };
+      (console[method] as (...args: unknown[]) => void) = wrapped;
+      this.cleanup.push(() => { (console[method] as (...args: unknown[]) => void) = original; });
+    }
+  }
+
+  private _consoleMessage(args: unknown[]): string {
+    return args.map((value) => {
+      if (value instanceof Error) return value.message;
+      if (typeof value === 'string') return value;
+      try { return JSON.stringify(value); } catch { return String(value); }
+    }).join(' ');
+  }
+
+  private _deviceContext(): Record<string, unknown> {
+    return {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      platform: navigator.platform,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen: { width: window.screen.width, height: window.screen.height, colorDepth: window.screen.colorDepth },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
   }
 
   private _setupPageViewTracking(): void {

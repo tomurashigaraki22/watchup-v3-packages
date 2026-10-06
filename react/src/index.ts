@@ -5,7 +5,14 @@ export { WatchupContext }            from './context.js';
 
 export { WatchupErrorBoundary } from './ErrorBoundary.js';
 
-export { useWatchup, useTrack, useStartTrace } from './hooks.js';
+export {
+  useWatchup,
+  useTrack,
+  useStartTrace,
+  useIdentify,
+  useFlag,
+  useVariant,
+} from './hooks.js';
 
 // Re-export core types so consumers only need one package
 export type {
@@ -14,4 +21,10 @@ export type {
   ErrorPayload,
   EventPayload,
   IngestBatch,
+  WatchupUser,
+  LogContext,
+  LogLevel,
+  LoggingOptions,
+  FeatureFlag,
+  FlagContext,
 } from '@watchupltd/browser';

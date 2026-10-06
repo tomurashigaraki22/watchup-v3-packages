@@ -2,6 +2,26 @@
 // @watchupltd/node  ·  types
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface WatchupUser {
+  id: string | number;
+  email?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+/** Log levels for structured application logs. */
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error' | 'critical';
+
+/** Opt-in controls for application logging. */
+export interface LoggingOptions {
+  /** Enable `captureLog()`. Default: `false`. */
+  enabled?: boolean;
+  /** Forward console methods to `captureLog()`. Default: `false`. */
+  captureConsole?: boolean;
+  /** Lowest severity that is sent. Default: `'debug'`. */
+  minLevel?: LogLevel;
+}
+
 /**
  * Options passed to `new Watchup(options)`.
  */
@@ -56,6 +76,9 @@ export interface WatchupOptions {
    * `1` = 100 %, `0.1` = 10 %. Default: `1`.
    */
   sampleRate?: number;
+
+  /** Opt-in structured application logging. */
+  logging?: LoggingOptions;
 }
 
 // ── Ingest shapes ─────────────────────────────────────────────────────────────
@@ -76,6 +99,7 @@ export interface TracePayload {
   release?: string;
   /** Arbitrary extra metadata (user ID, tenant, feature flag…). */
   meta?: Record<string, unknown>;
+  user?: WatchupUser;
 }
 
 /** A captured error or exception. */
@@ -94,6 +118,7 @@ export interface ErrorPayload {
   timestamp: string;
   environment?: string;
   release?: string;
+  user?: WatchupUser;
 }
 
 /** A custom analytics event. */
@@ -111,4 +136,38 @@ export interface IngestBatch {
   traces?: TracePayload[];
   errors?: ErrorPayload[];
   events?: EventPayload[];
+}
+
+export type LogContext = Record<string, unknown> & {
+  level?: LogLevel;
+  route?: string;
+};
+
+export interface FlagContext {
+  userId?: string | number;
+  email?: string;
+  plan?: string;
+  [key: string]: unknown;
+}
+
+export interface FlagVariant {
+  key: string;
+  weight: number;
+}
+
+export interface FlagTargetingRule {
+  attribute: string;
+  operator: 'in' | 'not_in' | 'contains' | 'equals';
+  values: string[];
+}
+
+export interface FeatureFlag {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  rollout_percentage: number;
+  variants: FlagVariant[];
+  targeting_rules: FlagTargetingRule[];
 }

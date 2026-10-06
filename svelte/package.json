@@ -1,6 +1,6 @@
 {
   "name": "@watchupltd/svelte",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "Official Watchup SDK for Svelte / SvelteKit — provider, context, and actions",
   "license": "MIT",
   "author": "Watchup Ltd",
@@ -23,7 +23,7 @@
     "dev":       "tsup --watch"
   },
   "peerDependencies": {
-    "@watchupltd/browser": "^0.1.0",
+    "@watchupltd/browser": "^0.2.0",
     "svelte": ">=4.0.0"
   },
   "devDependencies": {

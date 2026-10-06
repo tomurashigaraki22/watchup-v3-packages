@@ -1,4 +1,4 @@
 export { initWatchup, getWatchup } from './watchup.js';
 export { withWatchupRoute }        from './withWatchupRoute.js';
 
-export type { WatchupOptions, TracePayload, ErrorPayload, EventPayload } from '@watchupltd/node';
+export type { WatchupOptions, TracePayload, ErrorPayload, EventPayload, LogContext, LogLevel, LoggingOptions } from '@watchupltd/node';
