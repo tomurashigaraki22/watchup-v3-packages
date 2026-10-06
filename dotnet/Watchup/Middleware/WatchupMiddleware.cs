@@ -1,24 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Watchup .NET SDK  ·  ASP.NET Core Middleware + DI extensions
+// Watchup .NET SDK  ·  ASP.NET Core middleware + DI extensions (.NET 8+)
 // ─────────────────────────────────────────────────────────────────────────────
 
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Watchup.Middleware;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DI extensions
-// ─────────────────────────────────────────────────────────────────────────────
-
 public static class WatchupServiceExtensions
 {
+    internal const string HttpClientName = "Watchup";
+
     /// <summary>
-    /// Register Watchup and start the background flush timer.
+    /// Register a singleton <see cref="WatchupClient"/> (sending through IHttpClientFactory)
+    /// and a hosted service that flushes it on application shutdown.
     /// </summary>
     /// <example>
     /// <code>
@@ -26,63 +28,63 @@ public static class WatchupServiceExtensions
     /// {
     ///     o.ApiKey      = builder.Configuration["Watchup:ApiKey"]!;
     ///     o.Environment = builder.Environment.EnvironmentName;
-    ///     o.Release     = "1.2.3";
     /// });
     /// </code>
     /// </example>
-    public static IServiceCollection AddWatchup(
-        this IServiceCollection services,
-        Action<WatchupOptions>  configure)
+    public static IServiceCollection AddWatchup(this IServiceCollection services, Action<WatchupOptions> configure)
     {
-        var opts = new WatchupOptions();
-        configure(opts);
+        services.Configure(configure);
+        return services.AddWatchupCore();
+    }
 
-        var client = new WatchupClient(opts);
-        services.AddSingleton(client);
+    /// <summary>Register WatchUp from a configuration section (e.g. <c>Configuration.GetSection("Watchup")</c>).</summary>
+    public static IServiceCollection AddWatchup(this IServiceCollection services, IConfiguration section)
+    {
+        services.Configure<WatchupOptions>(section);
+        return services.AddWatchupCore();
+    }
 
-        // Wire the client into the hosted service lifecycle so it flushes on shutdown.
-        services.AddSingleton<IHostedService>(sp =>
-            new WatchupHostedService(sp.GetRequiredService<WatchupClient>()));
-
+    private static IServiceCollection AddWatchupCore(this IServiceCollection services)
+    {
+        services.AddHttpClient(HttpClientName);
+        services.AddSingleton(sp => new WatchupClient(
+            sp.GetRequiredService<IOptions<WatchupOptions>>().Value,
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName)));
+        services.AddHostedService<WatchupHostedService>();
         return services;
     }
 
     /// <summary>
-    /// Add the Watchup request-tracing middleware to the pipeline.
-    /// Call this after <c>UseRouting()</c> so route templates are resolved.
+    /// Add request tracing and exception capture. Call after <c>UseRouting()</c> so route
+    /// templates are known, and before endpoints.
     /// </summary>
-    /// <example>
-    /// <code>
-    /// app.UseRouting();
-    /// app.UseWatchup();   // ← here
-    /// app.MapControllers();
-    /// </code>
-    /// </example>
-    public static IApplicationBuilder UseWatchup(this IApplicationBuilder app)
-        => app.UseMiddleware<WatchupMiddleware>();
+    public static IApplicationBuilder UseWatchup(this IApplicationBuilder app) => app.UseMiddleware<WatchupMiddleware>();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Request middleware
-// ─────────────────────────────────────────────────────────────────────────────
-
 /// <summary>
-/// Captures HTTP request traces and forwards unhandled exceptions as errors.
+/// One trace per request (route template, real status, duration), a per-request
+/// <see cref="WatchupScope"/>, and exception capture. Exceptions are re-thrown
+/// unchanged, so the rest of the pipeline behaves exactly as before.
 /// </summary>
 public sealed class WatchupMiddleware
 {
+    private static readonly Regex SafeId = new(@"^[\w\-.:]{1,128}$", RegexOptions.Compiled);
     private readonly RequestDelegate _next;
 
     public WatchupMiddleware(RequestDelegate next) => _next = next;
 
     public async Task InvokeAsync(HttpContext ctx, WatchupClient watchup)
     {
-        var start = DateTimeOffset.UtcNow;
-        Exception? caught = null;
+        var header = ctx.Request.Headers["X-Request-ID"].ToString();
+        using var scope = WatchupScope.Begin(SafeId.IsMatch(header) ? header : ctx.TraceIdentifier);
+        if (Activity.Current is { IdFormat: ActivityIdFormat.W3C } activity) scope.TraceId = activity.TraceId.ToString();
 
+        var started = DateTime.UtcNow;
+        var watch = Stopwatch.StartNew();
+        Exception? caught = null;
         try
         {
-            await _next(ctx);
+            await _next(ctx).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -91,70 +93,58 @@ public sealed class WatchupMiddleware
         }
         finally
         {
-            var ms = (long)(DateTimeOffset.UtcNow - start).TotalMilliseconds;
-
-            // Prefer the matched route template over raw path to avoid high-cardinality explosion.
-            string? routeTemplate = null;
-            var endpoint = ctx.Features.Get<IEndpointFeature>()?.Endpoint;
-            if (endpoint is RouteEndpoint re)
-                routeTemplate = re.RoutePattern.RawText;
-
-            var span = routeTemplate is not null
-                ? $"{ctx.Request.Method} /{routeTemplate.TrimStart('/')}"
-                : $"{ctx.Request.Method} {ctx.Request.Path.Value}";
-
-            var statusCode = ctx.Response.StatusCode;
-            var status = statusCode >= 500 ? "err"
-                       : statusCode >= 400 ? "warn"
-                       : "ok";
+            var span = $"{ctx.Request.Method} {RouteOf(ctx)}";
+            scope.Route = span;
+            var status = caught is not null && !ctx.Response.HasStarted ? 500 : ctx.Response.StatusCode;
+            var request = new Dictionary<string, object?>
+            {
+                ["method"] = ctx.Request.Method,
+                ["path"] = Normalise(ctx.Request.Path.Value ?? "/"),
+                ["user_agent"] = ctx.Request.Headers.UserAgent.ToString(),
+            };
 
             var opts = watchup.Options;
-            var sampleRate = opts.SampleRate;
-#pragma warning disable CA5394
-            if (sampleRate >= 1.0 || new Random().NextDouble() < sampleRate)
-#pragma warning restore CA5394
+            if (opts.SampleRate >= 1.0 || ThreadSafeRandom.NextDouble() < opts.SampleRate)
             {
-                watchup.SendTrace(new TracePayload
-                {
-                    Span       = span,
-                    Ms         = ms,
-                    StatusCode = statusCode,
-                    Status     = status,
-                    Timestamp  = start.UtcDateTime.ToString("O"),
-                    Environment = opts?.Environment,
-                    Release     = opts?.Release,
-                });
+                watchup.RecordTrace(span, "http", watch.Elapsed.TotalMilliseconds, status,
+                    status >= 500 ? "err" : status >= 400 ? "warn" : "ok", started, request);
             }
 
             if (caught is not null)
             {
-                watchup.CaptureError(caught, route: span, level: "error");
+                watchup.CaptureError(caught, span, "error", new() { ["request"] = request });
             }
-            else if (statusCode >= 500)
+            else if (status >= 500 && opts.CaptureServerErrorResponses)
             {
-                watchup.CaptureError(
-                    $"HTTP {statusCode} on {span}",
-                    route: span,
-                    level: "error");
+                watchup.CaptureError($"HTTP {status} on {span}", span, "error", new() { ["request"] = request });
             }
         }
     }
+
+    private static string RouteOf(HttpContext ctx)
+    {
+        if (ctx.GetEndpoint() is RouteEndpoint endpoint && endpoint.RoutePattern.RawText is { } raw)
+            return "/" + raw.TrimStart('/');
+        return Normalise(ctx.Request.Path.Value ?? "/");
+    }
+
+    private static readonly Regex Ids = new(@"/(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{24,64}|\d+)(?=/|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    internal static string Normalise(string path)
+    {
+        var p = Ids.Replace(path, "/:id");
+        return p.Length > 1 ? p.TrimEnd('/') : p;
+    }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hosted service — ties WatchupClient to the app lifetime
-// ─────────────────────────────────────────────────────────────────────────────
-
+/// <summary>Flushes the client when the host stops.</summary>
 internal sealed class WatchupHostedService : IHostedService
 {
     private readonly WatchupClient _client;
+
     public WatchupHostedService(WatchupClient client) => _client = client;
 
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public async Task StopAsync(CancellationToken ct)
-    {
-        await _client.FlushAsync();
-        await _client.DisposeAsync();
-    }
+    public async Task StopAsync(CancellationToken cancellationToken) => await _client.DisposeAsync().ConfigureAwait(false);
 }

@@ -10,7 +10,15 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@watchupltd/core": [
+        "../core/src/index.ts"
+      ]
+    },
+    "exactOptionalPropertyTypes": false
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

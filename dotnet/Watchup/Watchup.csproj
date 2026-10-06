@@ -1,45 +1,53 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net8.0;net9.0</TargetFrameworks>
+    <!-- netstandard2.1: the core client. net8.0+: core + ASP.NET Core middleware and DI. -->
+    <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>Watchup</RootNamespace>
 
+    <!-- Analyzers: warnings fail the build. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
     <!-- NuGet package metadata -->
     <PackageId>Watchup</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Watchup</Authors>
     <Description>Official .NET SDK for Watchup — request tracing, error capture, and custom event tracking for ASP.NET Core applications.</Description>
     <PackageTags>watchup;monitoring;tracing;errors;apm;observability</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/tomurashigaraki22/watchup-v3-packages/tree/main/dotnet</RepositoryUrl>
+    <PackageReleaseNotes>https://github.com/tomurashigaraki22/watchup-v3-packages/blob/main/dotnet/CHANGELOG.md</PackageReleaseNotes>
+    <RepositoryUrl>https://github.com/tomurashigaraki22/watchup-v3-packages</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
-    <!-- Suppress nullable warnings on netstandard2.1 where some BCL annotations are absent -->
-    <NoWarn>$(NoWarn);CS8600;CS8603</NoWarn>
+    <!-- Symbols package (.snupkg) and deterministic builds for SourceLink. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <!-- Polyfills needed on netstandard2.1 -->
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-    <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
+    <Compile Remove="Middleware/**" />
   </ItemGroup>
 
-  <!-- ASP.NET Core integration (middleware) -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Http.Extensions" Version="2.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Routing" Version="2.2.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <InternalsVisibleTo Include="Watchup.Tests" />
   </ItemGroup>
 
 </Project>

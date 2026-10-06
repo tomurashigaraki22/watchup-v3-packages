@@ -1,52 +1,60 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // @watchupltd/react  ·  WatchupProvider
 //
-// Initialises the Watchup browser SDK once and makes it available to the
-// entire React tree via context.  Safe to render in strict-mode — the client
-// is created with a ref so it survives double-invocation.
+// Client-only and StrictMode-safe: the browser client is shared through a
+// registry (see registry.ts), so double renders and development remounts reuse
+// one client and never duplicate listeners. During SSR the context holds a
+// no-op client.
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use client'; // Next.js App Router guard (ignored in plain React)
 
-import React, { useEffect, useRef, type ReactNode } from 'react';
-import { Watchup, type WatchupOptions } from '@watchupltd/browser';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Watchup, WatchupOptions } from '@watchupltd/browser';
 import { WatchupContext } from './context.js';
+import { noopWatchup } from './noop.js';
+import { acquireClient, releaseClient, retainClient } from './registry.js';
 
 export interface WatchupProviderProps {
-  /** Watchup project API key. */
-  apiKey: string;
-  /** Full SDK options (excluding apiKey which is a top-level prop). */
+  /** Watchup project **public** key (`wup_pub_…`). */
+  apiKey?: string;
+  /** SDK options (apiKey is a top-level prop). */
   options?: Omit<WatchupOptions, 'apiKey'>;
+  /** Use a client you created yourself instead (it is not shut down on unmount). */
+  client?: Watchup;
   children: ReactNode;
 }
 
+const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+let warnedMissingKey = false;
+
 /**
- * Mount this once near the root of your application.
+ * Mount once near the root of your application.
  *
  * @example
- * <WatchupProvider apiKey="wup_live_xxx">
+ * <WatchupProvider apiKey={import.meta.env.VITE_WATCHUP_API_KEY}>
  *   <App />
  * </WatchupProvider>
  */
-export function WatchupProvider({ apiKey, options, children }: WatchupProviderProps) {
-  // Use a ref so strict-mode double-mount doesn't create two instances
-  const instanceRef = useRef<Watchup | null>(null);
-
-  if (!instanceRef.current) {
-    instanceRef.current = new Watchup({ apiKey, ...options });
-  }
+export function WatchupProvider({ apiKey, options, client, children }: WatchupProviderProps) {
+  const [instance] = useState<Watchup>(() => {
+    if (client) return client;
+    if (!isBrowser) return noopWatchup;
+    if (!apiKey) {
+      if (!warnedMissingKey) {
+        warnedMissingKey = true;
+        console.warn('[watchup] Monitoring is disabled because <WatchupProvider> has no apiKey.');
+      }
+      return noopWatchup;
+    }
+    return acquireClient({ ...options, apiKey });
+  });
 
   useEffect(() => {
-    // Flush + clean up on unmount (HMR, test teardowns, etc.)
-    return () => {
-      instanceRef.current?.shutdown();
-      instanceRef.current = null;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (client || instance === noopWatchup) return undefined;
+    retainClient(instance);
+    return () => releaseClient(instance);
+  }, [client, instance]);
 
-  return (
-    <WatchupContext.Provider value={instanceRef.current}>
-      {children}
-    </WatchupContext.Provider>
-  );
+  return <WatchupContext.Provider value={instance}>{children}</WatchupContext.Provider>;
 }

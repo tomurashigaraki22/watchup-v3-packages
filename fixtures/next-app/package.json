@@ -1,0 +1,8 @@
+{
+  "name": "watchup-fixture-next",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "build:turbo": "next build --turbopack"
+  }
+}

@@ -1,13 +1,14 @@
 {
   "name": "@watchupltd/mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server for WatchUp production context",
   "license": "MIT",
   "author": "Watchup Ltd",
   "homepage": "https://watchup.site/docs/mcp",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/watchupltd/watchup-sdk.git"
+    "url": "git+https://github.com/tomurashigaraki22/watchup-v3-packages.git",
+    "directory": "mcp"
   },
   "keywords": [
     "watchup",
@@ -28,13 +29,16 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "tool-schema.json",
     "README.md"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "schema": "node dist/index.js --print-schema > tool-schema.json",
+    "test": "vitest run --root .. --project mcp"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
@@ -43,6 +47,7 @@
   "devDependencies": {
     "@types/node": "^20.12.0",
     "tsup": "^8.0.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "@watchupltd/core": "*"
   }
 }

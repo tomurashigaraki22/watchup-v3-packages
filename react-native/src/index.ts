@@ -1,6 +1,14 @@
 export { WatchupReactNative, Watchup } from './client.js';
 export { WatchupProvider, type WatchupProviderProps } from './WatchupProvider.js';
-export { useIdentify, useStartTrace, useTrack, useWatchup } from './hooks.js';
+export {
+  useIdentify,
+  useStartTrace,
+  useTrack,
+  useWatchup,
+  useScreen,
+  useNavigationTracking,
+} from './hooks.js';
+export { SDK_NAME, SDK_VERSION } from './version.js';
 export type {
   AutoCaptureOptions,
   ErrorPayload,
@@ -9,7 +17,11 @@ export type {
   LogContext,
   LogLevel,
   LoggingOptions,
+  QueueStorage,
   TracePayload,
   WatchupReactNativeOptions,
   WatchupUser,
+  Diagnostic,
+  DiagnosticType,
+  FlushResult,
 } from './types.js';

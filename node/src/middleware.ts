@@ -1,126 +1,74 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// @watchupltd/node  ·  Express middleware
+// @watchupltd/node  ·  Express / Node HTTP helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { WatchupOptions, TracePayload, ErrorPayload } from './types.js';
-import type { Batcher } from './batcher.js';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Replace common variable path segments with a `:param` placeholder so that
- * `/users/42` and `/users/abc-123` are grouped under the same span name.
- *
- * Express automatically provides `req.route.path` for matched routes; this
- * fallback is only used for unmatched paths (404s, middleware-only routes).
+ * Replace variable path segments with `:id` so `/users/42` and `/users/abc-…`
+ * group under one span. Only used when the framework has no route template
+ * (404s, middleware-only paths).
  */
-function normalisePath(path: string): string {
-  return path
-    // UUIDs  /items/3f2504e0-4f89-11d3-9a0c-0305e82c3301
-    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:id')
-    // Numeric IDs  /users/42
-    .replace(/\/\d+/g, '/:id')
+export function normalisePath(path: string): string {
+  const clean = (path.split('?')[0] ?? '/') || '/';
+  return clean
+    // UUIDs
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/:id')
+    // Mongo ObjectIds and long hex hashes
+    .replace(/\/[0-9a-f]{24,64}(?=\/|$)/gi, '/:id')
+    // Numeric IDs
+    .replace(/\/\d+(?=\/|$)/g, '/:id')
     // Strip trailing slashes except for root
     .replace(/(.+)\/$/, '$1');
 }
 
-function traceStatus(statusCode: number): TracePayload['status'] {
+function templateOf(route: any): string | undefined {
+  const path = route?.path;
+  if (typeof path === 'string') return path;
+  if (Array.isArray(path)) return path.map(String).join('|');
+  if (path instanceof RegExp) return path.toString();
+  return undefined;
+}
+
+/** `METHOD /mount/route/:param` from Express, or a normalised raw path. */
+export function routeName(req: any): string {
+  const method = String(req.method ?? 'GET').toUpperCase();
+  const template = templateOf(req.route);
+  if (template !== undefined) {
+    const base = typeof req.baseUrl === 'string' ? req.baseUrl : '';
+    const full = `${base}${template === '/' && base ? '' : template}` || '/';
+    return `${method} ${full}`;
+  }
+  return `${method} ${normalisePath(String(req.originalUrl ?? req.url ?? req.path ?? '/'))}`;
+}
+
+export function traceStatus(statusCode: number): 'ok' | 'warn' | 'err' {
   if (statusCode >= 500) return 'err';
   if (statusCode >= 400) return 'warn';
   return 'ok';
 }
 
-// ── Request middleware ────────────────────────────────────────────────────────
+const SAFE_HEADERS = ['user-agent', 'content-type', 'accept', 'referer', 'origin', 'x-request-id', 'x-correlation-id'];
 
-type RequestMiddlewareOpts = Pick<WatchupOptions, 'environment' | 'release' | 'sampleRate'>;
-
-/**
- * Factory — returned by `watchup.requestMiddleware()`.
- *
- * Hooks into `res.on('finish')` so it adds zero latency to the request path.
- * Works with Express, Fastify-compat, and any framework that exposes a
- * Node `http.IncomingMessage`-style `req` and `http.ServerResponse`-style `res`.
- */
-export function createRequestMiddleware(batcher: Batcher, opts: RequestMiddlewareOpts) {
-  const { environment, release, sampleRate = 1 } = opts;
-
-  return function watchupRequest(req: any, res: any, next: () => void): void {
-    // ── Sampling ──────────────────────────────────────────────────────────────
-    if (sampleRate < 1 && Math.random() > sampleRate) {
-      return next();
-    }
-
-    const start = Date.now();
-
-    res.on('finish', () => {
-      const ms = Date.now() - start;
-
-      // Prefer the matched route pattern from Express (`req.route.path` is
-      // e.g. `/users/:id`) over the raw URL, which contains real IDs.
-      const routePath: string =
-        req.route?.path
-          ? `${req.method} ${req.baseUrl ?? ''}${req.route.path}`
-          : `${req.method} ${normalisePath(req.path ?? req.url ?? '/')}`;
-
-      const trace: TracePayload = {
-        span:        routePath,
-        ms,
-        status_code: res.statusCode,
-        status:      traceStatus(res.statusCode),
-        timestamp:   new Date().toISOString(),
-        ...(environment && { environment }),
-        ...(release    && { release }),
-      };
-
-      batcher.addTrace(trace);
-    });
-
-    next();
+/** Request metadata without credentials, cookies or bodies. */
+export function requestDetails(req: any): Record<string, unknown> {
+  const headers: Record<string, unknown> = {};
+  for (const name of SAFE_HEADERS) {
+    const value = req.headers?.[name];
+    if (value !== undefined) headers[name] = Array.isArray(value) ? value.join(', ') : value;
+  }
+  const url = String(req.originalUrl ?? req.url ?? '/');
+  return {
+    method: req.method,
+    path: normalisePath(url),
+    // Query strings are kept for debugging; the core scrubber removes secret params.
+    url,
+    headers,
   };
 }
 
-// ── Error middleware ──────────────────────────────────────────────────────────
-
-type ErrorMiddlewareOpts = Pick<WatchupOptions, 'environment' | 'release'>;
-
-/**
- * Factory — returned by `watchup.errorMiddleware()`.
- *
- * Captures errors thrown/passed in Express routes and forwards them to
- * Watchup before delegating to the next error handler.
- *
- * IMPORTANT: must be registered AFTER all routes, and must have exactly 4
- * parameters so Express recognises it as an error-handling middleware.
- */
-export function createErrorMiddleware(batcher: Batcher, opts: ErrorMiddlewareOpts) {
-  const { environment, release } = opts;
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  return function watchupError(err: any, req: any, res: any, next: (e?: any) => void): void {
-    if (err) {
-      const route: string =
-        req.route?.path
-          ? `${req.method} ${req.baseUrl ?? ''}${req.route.path}`
-          : `${req.method} ${normalisePath(req.path ?? req.url ?? '/')}`;
-
-      const payload: ErrorPayload = {
-        message: err.message ?? String(err),
-        level:   'error',
-        route,
-        ...(err.stack !== undefined && { stack: err.stack }),
-        context: {
-          method:     req.method,
-          url:        req.originalUrl ?? req.url,
-          statusCode: err.status ?? err.statusCode ?? 500,
-        },
-        timestamp: new Date().toISOString(),
-        ...(environment && { environment }),
-        ...(release    && { release }),
-      };
-
-      batcher.addError(payload);
-    }
-
-    next(err); // Always pass to the next error handler
-  };
+/** Status an error asks for (`err.status`/`err.statusCode`), defaulting to 500. */
+export function errorStatus(err: any): number {
+  const status = Number(err?.status ?? err?.statusCode);
+  return Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
 }

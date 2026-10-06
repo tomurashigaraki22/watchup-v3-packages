@@ -1,14 +1,15 @@
 'use client';
 
-export { WatchupProvider }          from './WatchupProvider.js';
+export { WatchupProvider }               from './WatchupProvider.js';
 export type { WatchupNextProviderProps } from './WatchupProvider.js';
 
-// Re-export react hooks — they all work fine in App Router client components
+// React hooks work unchanged in App Router client components.
 export {
   useWatchup,
   useTrack,
   useStartTrace,
   useIdentify,
+  usePageView,
   useFlag,
   useVariant,
   WatchupErrorBoundary,

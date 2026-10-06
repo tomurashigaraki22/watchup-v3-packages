@@ -17,12 +17,30 @@ Quick start::
     watchup.track("user.signed_up", {"plan": "pro"})
 
     # Trace any operation
-    end = watchup.start_trace("db.query")
-    end()
+    with watchup.trace("db.query"):
+        ...
+
+Importing this package never makes network calls; the client starts its
+background delivery thread when it is constructed.
 """
 
+from ._queue import Diagnostic, FlushResult
+from ._version import SDK_NAME, SDK_VERSION
 from .client import Watchup
+from .context import RequestContext
 from .middleware import WatchupASGI, WatchupDjangoMiddleware, WatchupWSGI
+from .sql import sanitize_sql
 
-__all__ = ["Watchup", "WatchupASGI", "WatchupDjangoMiddleware", "WatchupWSGI"]
-__version__ = "2.0.0"
+__all__ = [
+    "Diagnostic",
+    "FlushResult",
+    "RequestContext",
+    "SDK_NAME",
+    "SDK_VERSION",
+    "Watchup",
+    "WatchupASGI",
+    "WatchupDjangoMiddleware",
+    "WatchupWSGI",
+    "sanitize_sql",
+]
+__version__ = SDK_VERSION

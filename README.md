@@ -1,221 +1,57 @@
 # watchup-v3-packages
 
-Official SDK monorepo for [Watchup](https://watchup.site) — application monitoring, error capture, request tracing, and custom event tracking.
+Official SDK monorepo for [Watchup](https://watchup.site) — application monitoring, error capture, request tracing, custom events, logs and feature flags.
 
-## Framework auto setup
-
-Use the setup CLI from an existing project:
-
-```bash
-npx create-watchup@latest
-npx create-watchup@latest next --api-key wup_pub_xxx
-npx create-watchup@latest express --api-key wup_live_xxx
-```
-
-The CLI detects Next.js, React/Vite, Node.js, and Express projects, installs the matching WatchUp SDK package, adds environment keys, and creates the setup files needed for errors, traces, page views, and live logs.
+Every SDK implements one transport contract ([`spec/`](./spec)): byte-aware chunks under 192 KiB, redaction before anything is queued, idempotency keys and retries. A shared test-vector file and a cross-language contract run keep them identical.
 
 ## Packages
 
-| Package | Registry | Description |
-|---|---|---|
-| [`create-watchup/`](./create-watchup/) | [npm: create-watchup](https://www.npmjs.com/package/create-watchup) | Framework auto-setup CLI |
-| [`node/`](./node/) | [npm · @watchupltd/node](https://www.npmjs.com/package/@watchupltd/node) | Express middleware for Node 18+ servers |
-| [`browser/`](./browser/) | [npm · @watchupltd/browser](https://www.npmjs.com/package/@watchupltd/browser) | Browser error capture + Web Vitals |
-| [`react/`](./react/) | [npm · @watchupltd/react](https://www.npmjs.com/package/@watchupltd/react) | React error boundary + hooks |
-| [`nextjs/`](./nextjs/) | [npm · @watchupltd/nextjs](https://www.npmjs.com/package/@watchupltd/nextjs) | Next.js App Router provider + route wrapping |
-| [`svelte/`](./svelte/) | [npm · @watchupltd/svelte](https://www.npmjs.com/package/@watchupltd/svelte) | Svelte store + action |
-| [`dotnet/`](./dotnet/) | [NuGet · Watchup](https://www.nuget.org/packages/Watchup) | ASP.NET Core middleware + DI extensions |
-| [`python/`](./python/) | [PyPI · watchup](https://pypi.org/project/watchup) | Flask, Django, FastAPI, and WSGI middleware |
+| Package | Directory | Registry | Version |
+| --- | --- | --- | --- |
+| Browser | [`browser/`](./browser) | npm `@watchupltd/browser` | 0.3.0 |
+| Node.js / Express | [`node/`](./node) | npm `@watchupltd/node` | 0.3.0 |
+| React | [`react/`](./react) | npm `@watchupltd/react` | 0.3.0 |
+| Next.js | [`nextjs/`](./nextjs) | npm `@watchupltd/nextjs` | 0.3.0 |
+| Svelte / SvelteKit | [`svelte/`](./svelte) | npm `@watchupltd/svelte` | 0.3.0 |
+| React Native / Expo | [`react-native/`](./react-native) | npm `@watchupltd/react-native` | 0.2.0 |
+| MCP server | [`mcp/`](./mcp) | npm `@watchupltd/mcp` | 0.2.0 |
+| Setup CLI | [`create-watchup/`](./create-watchup) | npm `create-watchup` | 0.2.0 |
+| Python | [`python/`](./python) | PyPI `watchup` | 2.1.0 |
+| Go | [`go/`](./go) | `github.com/tomurashigaraki22/watchup-go-sdk` (mirrored) | 0.1.0 |
+| .NET | [`dotnet/`](./dotnet) | NuGet `Watchup` | 1.1.0 |
 
----
+Internal: [`core/`](./core) (shared TypeScript transport, bundled into the JS packages), [`spec/`](./spec) (contract + vectors), [`tools/`](./tools) (mock ingest server, contract runner, release checks), [`fixtures/`](./fixtures) (consumer apps), [`e2e/`](./e2e) (browser matrix).
+
+Supported runtimes and package compatibility: [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md).
 
 ## Quick install
 
-**Node.js / Express**
 ```bash
-npm install @watchupltd/node
-```
-
-**Browser**
-```bash
-npm install @watchupltd/browser
-```
-
-**React**
-```bash
-npm install @watchupltd/react
-```
-
-**Next.js**
-```bash
-npm install @watchupltd/nextjs
-```
-
-**Svelte**
-```bash
-npm install @watchupltd/svelte
-```
-
-**.NET**
-```bash
+npx create-watchup@latest          # detects your framework and sets everything up
+npm install @watchupltd/node       # or browser, react, nextjs, svelte, react-native
+pip install watchup
+go get github.com/tomurashigaraki22/watchup-go-sdk
 dotnet add package Watchup
 ```
 
-**Python**
+## Development
+
 ```bash
-pip install watchup
+npm ci
+npm run lint && npm run build && npm run typecheck && npm test   # JS workspaces (vitest)
+node tools/release/check-versions.mjs                           # versions, changelogs, peer ranges
+node tools/check-bundle-size.mjs                                # browser bundle budgets
+npx playwright test                                             # Chromium, Firefox, WebKit
+node tools/contract/run.mjs                                      # same workload through every SDK
+node tools/docs/examples.mjs check && node tools/docs/examples.mjs run
+
+cd python && pip install -e ".[dev]" && ruff check watchup tests && mypy && pytest
+cd go && go test -race ./... && go vet ./...
+dotnet test dotnet/Watchup.Tests
 ```
 
----
-
-## Usage examples
-
-### Node.js / Express
-
-```js
-import express from "express";
-import { Watchup } from "@watchupltd/node";
-
-const watchup = new Watchup({ apiKey: process.env.WATCHUP_API_KEY });
-const app = express();
-
-app.use(watchup.requestMiddleware());
-// ... your routes ...
-app.use(watchup.errorMiddleware());
-```
-
-### Browser
-
-```js
-import { Watchup } from "@watchupltd/browser";
-
-const watchup = new Watchup({ apiKey: "wup_live_..." });
-watchup.track("page.viewed", { path: window.location.pathname });
-```
-
-### React
-
-```jsx
-import { WatchupProvider, useWatchup } from "@watchupltd/react";
-
-function App() {
-  return (
-    <WatchupProvider apiKey="wup_live_...">
-      <YourApp />
-    </WatchupProvider>
-  );
-}
-
-function YourComponent() {
-  const { track } = useWatchup();
-  return <button onClick={() => track("button.clicked")}>Click</button>;
-}
-```
-
-### Next.js
-
-```tsx
-// app/layout.tsx
-import { WatchupProvider } from "@watchupltd/nextjs/client";
-
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <body>
-        <WatchupProvider apiKey={process.env.NEXT_PUBLIC_WATCHUP_KEY!}>
-          {children}
-        </WatchupProvider>
-      </body>
-    </html>
-  );
-}
-```
-
-### Svelte
-
-```svelte
-<script>
-  import { WatchupProvider } from "@watchupltd/svelte";
-</script>
-
-<WatchupProvider apiKey="wup_live_...">
-  <slot />
-</WatchupProvider>
-```
-
-### Python
-
-```python
-import os
-from flask import Flask
-from watchup import Watchup, WatchupASGI
-
-watchup = Watchup(api_key=os.environ["WATCHUP_API_KEY"])
-app = Flask(__name__)
-
-watchup.init_app(app)   # Flask request tracing + error capture
-
-# FastAPI / Starlette: app.add_middleware(WatchupASGI, watchup_client=watchup)
-```
-
-The Python SDK also supports Django middleware, framework-agnostic WSGI, manual errors/events/traces, structured logs, feature flags, and graceful shutdown. See the [Python SDK documentation](https://watchup.site/docs/sdks/python).
-
-### .NET / ASP.NET Core
-
-```csharp
-// Program.cs
-using Watchup.Middleware;
-
-builder.Services.AddWatchup(o =>
-{
-    o.ApiKey      = builder.Configuration["Watchup:ApiKey"]!;
-    o.Environment = builder.Environment.EnvironmentName;
-});
-
-app.UseRouting();
-app.UseWatchup();
-app.MapControllers();
-```
-
----
-
-## Repository structure
-
-```
-watchup-v3-packages/
-├── browser/        # @watchupltd/browser
-├── dotnet/
-│   ├── Watchup/            # NuGet package source
-│   └── Watchup.Tests/      # xUnit tests
-├── nextjs/         # @watchupltd/nextjs
-├── node/           # @watchupltd/node
-├── python/         # watchup (PyPI)
-├── react/          # @watchupltd/react
-└── svelte/         # @watchupltd/svelte
-```
-
-Each JS/TS package is independently versioned and published. The `dotnet/` directory is a standard .NET solution.
-
----
-
-## Documentation & Links
-
-| Resource | URL |
-|---|---|
-| Website | [watchup.site](https://watchup.site) |
-| Full docs | [watchup.site/docs](https://watchup.site/docs) |
-| Getting started | [watchup.site/docs/getting-started](https://watchup.site/docs/getting-started) |
-| Node.js SDK | [watchup.site/docs/sdks/node](https://watchup.site/docs/sdks/node) |
-| Browser SDK | [watchup.site/docs/sdks/browser](https://watchup.site/docs/sdks/browser) |
-| React SDK | [watchup.site/docs/sdks/react](https://watchup.site/docs/sdks/react) |
-| Next.js SDK | [watchup.site/docs/sdks/nextjs](https://watchup.site/docs/sdks/nextjs) |
-| Svelte SDK | [watchup.site/docs/sdks/svelte](https://watchup.site/docs/sdks/svelte) |
-| .NET SDK | [watchup.site/docs/sdks/dotnet](https://watchup.site/docs/sdks/dotnet) |
-| Go SDK | [watchup.site/docs/sdks/go](https://watchup.site/docs/sdks/go) |
-| Python SDK | [watchup.site/docs/sdks/python](https://watchup.site/docs/sdks/python) |
-| Pricing | [watchup.site/pricing](https://watchup.site/pricing) |
-| Dashboard | [watchup.site/login](https://watchup.site/login) |
+CI runs all of the above on every pull request ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)). Releases: [`docs/RELEASING.md`](./docs/RELEASING.md). Ownership and policies: [`docs/GOVERNANCE.md`](./docs/GOVERNANCE.md). Work that lives outside this repository (server, docs site, VPS): [`docs/OPERATIONS.md`](./docs/OPERATIONS.md). The plan these all implement: [`SDK_IMPLEMENTATION_PLAN.md`](./SDK_IMPLEMENTATION_PLAN.md).
 
 ## License
 
-MIT
+MIT © Watchup Ltd

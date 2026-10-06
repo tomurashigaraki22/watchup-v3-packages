@@ -3,9 +3,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { Watchup } from './watchup.js';
+export { SDK_NAME, SDK_VERSION } from './version.js';
+export { normalisePath } from './middleware.js';
 
 export type {
   WatchupOptions,
+  WatchupUser,
   TracePayload,
   ErrorPayload,
   EventPayload,
@@ -13,4 +16,12 @@ export type {
   LogContext,
   LogLevel,
   LoggingOptions,
+  RequestContext,
+  FeatureFlag,
+  FlagContext,
+  FlagVariant,
+  FlagTargetingRule,
+  Diagnostic,
+  DiagnosticType,
+  FlushResult,
 } from './types.js';

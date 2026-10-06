@@ -10,4 +10,6 @@ export default defineConfig({
   treeshake: true,
   minify: false,
   target: "node18",
+  // @watchupltd/core is internal: bundle it.
+  noExternal: ["@watchupltd/core"],
 });

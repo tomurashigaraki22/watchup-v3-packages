@@ -1,0 +1,6 @@
+{
+  "name": "watchup-fixture-sveltekit",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "vite build" }
+}

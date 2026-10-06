@@ -1,0 +1,177 @@
+# WatchUp SDKs — releases (SDK plan Phases D and E).
+#
+# Canary:  Actions → Release → Run workflow (package, channel=canary).
+#          Publishes <version>-canary.<run> under the `canary` dist-tag / TestPyPI / prerelease.
+# Stable:  push a tag  <id>-v<version>  (e.g. node-v0.3.0, python-v2.1.0, go-v0.1.0, dotnet-v1.1.0).
+#
+# Every release is gated on the CI workflow, publishes with provenance where the
+# registry supports it, and finishes with a clean-install smoke test from the
+# registry itself.
+name: Release
+
+on:
+  push:
+    tags: ['*-v*']
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package id (browser, node, react, nextjs, svelte, react-native, mcp, create-watchup, python, go, dotnet)'
+        required: true
+      channel:
+        description: 'canary or stable'
+        required: true
+        default: canary
+        type: choice
+        options: [canary, stable]
+
+permissions:
+  contents: write
+  id-token: write # npm provenance and PyPI trusted publishing
+  attestations: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.r.outputs.id }}
+      channel: ${{ steps.r.outputs.channel }}
+      ecosystem: ${{ steps.r.outputs.ecosystem }}
+      version: ${{ steps.r.outputs.version }}
+      dir: ${{ steps.r.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - id: r
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ID="${GITHUB_REF_NAME%-v*}"; TAG_VERSION="${GITHUB_REF_NAME##*-v}"; CHANNEL=stable
+          else
+            ID="${{ inputs.package }}"; CHANNEL="${{ inputs.channel }}"; TAG_VERSION=""
+          fi
+          node --input-type=module -e "
+            import { packages } from './tools/release/packages.mjs';
+            const p = packages().find((x) => x.id === '$ID');
+            if (!p) { console.error('unknown package $ID'); process.exit(1); }
+            if ('$TAG_VERSION' && '$TAG_VERSION' !== p.version) { console.error('tag $TAG_VERSION != manifest ' + p.version); process.exit(1); }
+            const version = '$CHANNEL' === 'canary' ? p.version + '-canary.${{ github.run_number }}' : p.version;
+            console.log('id=' + p.id + '\necosystem=' + p.ecosystem + '\nversion=' + version + '\ndir=' + p.dir + '\nchannel=$CHANNEL');
+          " >> "$GITHUB_OUTPUT"
+          node tools/release/check-versions.mjs
+
+  ci:
+    needs: resolve
+    uses: ./.github/workflows/ci.yml
+
+  npm:
+    needs: [resolve, ci]
+    if: needs.resolve.outputs.ecosystem == 'npm'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.channel == 'stable' && 'npm' || 'npm-canary' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', registry-url: 'https://registry.npmjs.org' }
+      - run: npm ci
+      - name: Set canary version
+        if: needs.resolve.outputs.channel == 'canary'
+        run: |
+          npm version --no-git-tag-version -w ${{ needs.resolve.outputs.dir }} ${{ needs.resolve.outputs.version }}
+          node tools/release/sync-versions.mjs
+      - run: npm run build -w ${{ needs.resolve.outputs.dir }}
+      - run: npm pack -w ${{ needs.resolve.outputs.dir }} --pack-destination dist-release
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-path: 'dist-release/*.tgz' }
+      - run: npm publish dist-release/*.tgz --provenance --access public --tag ${{ needs.resolve.outputs.channel == 'stable' && 'latest' || 'canary' }}
+        env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
+      - name: Clean-install smoke test from the registry
+        run: |
+          NAME=$(node -p "require('./${{ needs.resolve.outputs.dir }}/package.json').name")
+          cd "$(mktemp -d)" && npm init -y >/dev/null
+          for i in 1 2 3 4 5 6; do npm view "$NAME@${{ needs.resolve.outputs.version }}" version && break; sleep 20; done
+          npm install "$NAME@${{ needs.resolve.outputs.version }}"
+          node -e "import('$NAME').catch(() => require('$NAME')).then(() => console.log('import ok'))" || test "$NAME" = "@watchupltd/nextjs" || test "$NAME" = "create-watchup"
+
+  pypi:
+    needs: [resolve, ci]
+    if: needs.resolve.outputs.ecosystem == 'pypi'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.channel == 'stable' && 'pypi' || 'testpypi' }}
+    defaults:
+      run: { working-directory: python }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Set canary version
+        if: needs.resolve.outputs.channel == 'canary'
+        run: |
+          V="$(echo '${{ needs.resolve.outputs.version }}' | sed 's/-canary\./.dev/')"
+          sed -i "s/^version = \".*\"/version = \"$V\"/" pyproject.toml
+          sed -i "s/^SDK_VERSION = \".*\"/SDK_VERSION = \"$V\"/" watchup/_version.py
+      - run: pip install build && python -m build
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-path: 'python/dist/*' }
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+          repository-url: ${{ needs.resolve.outputs.channel == 'stable' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+
+  nuget:
+    needs: [resolve, ci]
+    if: needs.resolve.outputs.ecosystem == 'nuget'
+    runs-on: ubuntu-latest
+    environment: nuget
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' }
+      - run: dotnet pack dotnet/Watchup -c Release -o out /p:Version=${{ needs.resolve.outputs.version }}
+      - name: Sign packages
+        run: |
+          echo "${{ secrets.NUGET_SIGNING_CERT_BASE64 }}" | base64 -d > cert.pfx
+          dotnet nuget sign out/*.nupkg --certificate-path cert.pfx --certificate-password "${{ secrets.NUGET_SIGNING_CERT_PASSWORD }}" --timestamper http://timestamp.digicert.com
+          rm cert.pfx
+      - uses: actions/attest-build-provenance@v1
+        with: { subject-path: 'out/*.nupkg' }
+      - run: dotnet nuget push "out/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  go:
+    needs: [resolve, ci]
+    if: needs.resolve.outputs.ecosystem == 'go'
+    runs-on: ubuntu-latest
+    environment: go-mirror
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23' }
+      - name: Mirror go/ to the module repository and tag it
+        env:
+          MIRROR_TOKEN: ${{ secrets.GO_MIRROR_TOKEN }}
+          VERSION: v${{ needs.resolve.outputs.version }}
+        run: |
+          git config user.name "watchup-release"
+          git config user.email "release@watchup.site"
+          git subtree split --prefix go -b go-release
+          git push "https://x-access-token:${MIRROR_TOKEN}@github.com/tomurashigaraki22/watchup-go-sdk.git" go-release:main
+          git push "https://x-access-token:${MIRROR_TOKEN}@github.com/tomurashigaraki22/watchup-go-sdk.git" "go-release:refs/tags/${VERSION}"
+      - name: Verify the Go proxy serves the tag
+        run: |
+          cd "$(mktemp -d)" && go mod init smoke
+          for i in 1 2 3 4 5 6; do GOPROXY=https://proxy.golang.org go list -m "github.com/tomurashigaraki22/watchup-go-sdk@v${{ needs.resolve.outputs.version }}" && break; sleep 30; done
+          go get "github.com/tomurashigaraki22/watchup-go-sdk@v${{ needs.resolve.outputs.version }}"
+
+  github-release:
+    needs: [resolve, npm, pypi, nuget, go]
+    if: always() && needs.resolve.outputs.channel == 'stable' && !contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract changelog section
+        run: |
+          awk "/^## ${{ needs.resolve.outputs.version }}/{flag=1;next}/^## /{flag=0}flag" "${{ needs.resolve.outputs.dir }}/CHANGELOG.md" > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.resolve.outputs.id }} ${{ needs.resolve.outputs.version }}
+          body_path: notes.md

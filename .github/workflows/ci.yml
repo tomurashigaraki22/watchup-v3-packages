@@ -1,0 +1,241 @@
+# WatchUp SDKs — continuous integration (SDK plan Phase A.3 and release gates in §4).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call: # releases gate on this workflow
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_DEFAULT: '22'
+  CI: 'true'
+
+jobs:
+  # ── JavaScript: lint, build, typecheck, unit tests on every supported Node ──
+  js:
+    name: JS (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node }}', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+        if: matrix.node == env.NODE_DEFAULT
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - run: node tools/release/check-versions.mjs
+      - run: node tools/check-bundle-size.mjs
+      - run: node tools/docs/examples.mjs check
+      - name: Fail if generated files are stale
+        run: |
+          node tools/release/sync-versions.mjs
+          npm run schema -w mcp
+          git diff --exit-code -- '*/src/version.ts' mcp/tool-schema.json
+
+  # ── Framework/runtime versions the packages claim to support ────────────────
+  js-compat:
+    name: JS compat (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'Express 4', install: 'express@4 @types/express@4', project: node }
+          - { name: 'Express 5', install: 'express@5 @types/express@5', project: node }
+          - { name: 'React 18', install: 'react@18 react-dom@18 @types/react@18 @types/react-dom@18', project: react }
+          - { name: 'React 19', install: 'react@19 react-dom@19 @types/react@19 @types/react-dom@19', project: react }
+          - { name: 'Svelte 4', install: 'svelte@4 @sveltejs/vite-plugin-svelte@3', project: svelte }
+          - { name: 'Svelte 5', install: 'svelte@5 @sveltejs/vite-plugin-svelte@4', project: svelte }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_DEFAULT }}', cache: npm }
+      - run: npm ci
+      # Test-only overrides of the workspace's dev versions.
+      - run: npm install --no-save --legacy-peer-deps ${{ matrix.install }}
+      - run: npx vitest run --project ${{ matrix.project }}
+
+  # ── Browser matrix for @watchupltd/browser ──────────────────────────────────
+  browsers:
+    name: Browsers (Chromium, Firefox, WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_DEFAULT }}', cache: npm }
+      - run: npm ci
+      - run: npm run build -w browser
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: test-results, retention-days: 7 }
+
+  # ── Consumer fixtures installed from packed tarballs (clean-install smoke) ──
+  fixtures:
+    name: Fixture (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'Next 14 (webpack)', dir: next-app, install: 'next@14 react@18 react-dom@18 @types/react@18 @types/node typescript@5', build: 'npx next build', scan: .next/static }
+          - { name: 'Next 15 (webpack)', dir: next-app, install: 'next@15 react@19 react-dom@19 @types/react@19 @types/node typescript@5', build: 'npx next build', scan: .next/static }
+          - { name: 'Next 15 (Turbopack)', dir: next-app, install: 'next@15 react@19 react-dom@19 @types/react@19 @types/node typescript@5', build: 'npx next build --turbopack', scan: .next/static }
+          - { name: 'Vite + React 18', dir: vite-react, install: 'vite@5 react@18 react-dom@18', build: 'npx vite build', scan: dist }
+          - { name: 'Vite + React 19', dir: vite-react, install: 'vite@5 react@19 react-dom@19', build: 'npx vite build', scan: dist }
+          - { name: 'SvelteKit + Svelte 4', dir: sveltekit, install: '@sveltejs/kit@2 @sveltejs/adapter-node@5 @sveltejs/vite-plugin-svelte@3 svelte@4 vite@5', build: 'npx vite build', scan: build/client }
+          - { name: 'SvelteKit + Svelte 5', dir: sveltekit, install: '@sveltejs/kit@2 @sveltejs/adapter-node@5 @sveltejs/vite-plugin-svelte@4 svelte@5 vite@5', build: 'npx vite build', scan: build/client }
+          - { name: 'Expo (managed)', dir: expo-app, install: 'expo@~52.0.0 react@18.3.1 react-native@0.76 @react-native-async-storage/async-storage @react-native-community/netinfo', build: 'npx expo export --platform android --output-dir dist', scan: dist }
+          - { name: 'React Native (bare, Hermes)', dir: react-native-bare, install: 'react-native@0.76 react@18.3.1 @react-native/metro-config@0.76 @react-native/babel-preset@0.76 @react-native-community/cli@15', build: 'mkdir -p out && npm run bundle && npm run hermes', scan: out }
+    env:
+      NEXT_PUBLIC_WATCHUP_API_KEY: wup_pub_fixture
+      VITE_WATCHUP_API_KEY: wup_pub_fixture
+      PUBLIC_WATCHUP_API_KEY: wup_pub_fixture
+      EXPO_PUBLIC_WATCHUP_API_KEY: wup_pub_fixture
+      WATCHUP_API_KEY: wup_live_fixtureserversecret
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_DEFAULT }}', cache: npm }
+      - run: npm ci && npm run build
+      - run: |
+          mkdir -p /tmp/watchup-pkgs
+          npm pack -w browser -w react -w nextjs -w node -w svelte -w react-native --pack-destination /tmp/watchup-pkgs
+      - working-directory: fixtures/${{ matrix.dir }}
+        run: npm install --no-audit --no-fund ${{ matrix.install }} /tmp/watchup-pkgs/*.tgz
+      - working-directory: fixtures/${{ matrix.dir }}
+        run: ${{ matrix.build }}
+      - name: No server secrets in client output
+        working-directory: fixtures/${{ matrix.dir }}
+        run: node ../../tools/scan-build-secrets.mjs ${{ matrix.scan }} wup_live_fixtureserversecret
+
+  # ── Python ──────────────────────────────────────────────────────────────────
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    defaults:
+      run: { working-directory: python }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '${{ matrix.python }}' }
+      - run: python -m pip install --upgrade pip build twine && pip install -e ".[dev]"
+      - run: ruff check watchup tests
+      - run: mypy
+        if: matrix.python == '3.12'
+      - run: pytest -q
+      - run: python -m build && twine check dist/*
+
+  # ── Go ──────────────────────────────────────────────────────────────────────
+  go:
+    name: Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21', '1.22', '1.23']
+    defaults:
+      run: { working-directory: go }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '${{ matrix.go }}' }
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: staticcheck
+        if: matrix.go == '1.23'
+        run: go run honnef.co/go/tools/cmd/staticcheck@2024.1.1 ./...
+      - name: Build example services
+        if: matrix.go == '1.23'
+        run: |
+          for dir in examples/nethttp examples/chi examples/gin; do
+            (cd "$dir" && go mod tidy && go build ./...)
+          done
+
+  # ── .NET ────────────────────────────────────────────────────────────────────
+  dotnet:
+    name: .NET
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - run: dotnet build dotnet/Watchup -c Release
+      - run: dotnet test dotnet/Watchup.Tests -c Release
+      - run: dotnet build dotnet/samples/AspNetCoreSample -c Release
+      - run: dotnet pack dotnet/Watchup -c Release -o dotnet/artifacts
+      - uses: actions/upload-artifact@v4
+        with: { name: nuget, path: dotnet/artifacts, retention-days: 7 }
+
+  # ── Cross-language contract against the mock ingest server ──────────────────
+  contract:
+    name: Contract (all SDKs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_DEFAULT }}', cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23' }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' } # builds every Watchup target framework
+      - run: npm ci && npm run build -w node
+      - run: pip install flask
+      - run: node tools/contract/run.mjs node python go dotnet
+      - name: Documentation examples run against the mock API
+        run: node tools/docs/examples.mjs run
+
+  # ── MCP package smoke test from the packed tarball ──────────────────────────
+  mcp-smoke:
+    name: MCP npx smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_DEFAULT }}', cache: npm }
+      - run: npm ci && npm run build -w mcp
+      - run: npm pack -w mcp --pack-destination /tmp
+      - run: |
+          cd "$(mktemp -d)"
+          npx --yes /tmp/watchupltd-mcp-*.tgz --version
+          npx --yes /tmp/watchupltd-mcp-*.tgz --print-schema > schema.json
+          diff <(node -e 'console.log(JSON.stringify(require("./schema.json")))') <(node -e "console.log(JSON.stringify(require('$GITHUB_WORKSPACE/mcp/tool-schema.json')))")
+
+  # ── Secret scanning ─────────────────────────────────────────────────────────
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

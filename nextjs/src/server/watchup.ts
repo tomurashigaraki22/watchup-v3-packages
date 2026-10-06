@@ -1,66 +1,89 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // @watchupltd/nextjs  ·  Server-side singleton
 //
-// Use this in API routes, Route Handlers, and Server Actions.
-// The singleton is initialised lazily on first use and is safe in both the
-// Pages Router (one Node process) and App Router (module caching per worker).
+// One Node client per process, stored on globalThis so dev-server HMR and
+// duplicated module instances (route bundles) share it. Node.js runtime only:
+// the Edge runtime has no AsyncLocalStorage-backed process lifecycle to flush.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Watchup as NodeWatchup, type WatchupOptions } from '@watchupltd/node';
 import { createNoopWatchup } from './noop.js';
 
-let _instance: NodeWatchup | null = null;
-let _warnedMissingApiKey = false;
+const KEY = Symbol.for('watchup.nextjs.server');
 
-/**
- * Returns the shared server-side Watchup instance, creating it on first call.
- *
- * Call `initWatchup()` explicitly in your app bootstrap (e.g.
- * `instrumentation.ts`) to set options up-front; otherwise the first call to
- * `getWatchup()` will initialise with whatever env vars are present.
- *
- * @example
- * // instrumentation.ts
- * import { initWatchup } from '@watchupltd/nextjs/server';
- *
- * export function register() {
- *   initWatchup({
- *     apiKey:      process.env.WATCHUP_API_KEY!,
- *     environment: process.env.NODE_ENV,
- *   });
- * }
- */
-export function initWatchup(options?: Partial<WatchupOptions>): NodeWatchup {
-  if (!_instance) {
-    const apiKey = options?.apiKey ?? process.env.WATCHUP_API_KEY ?? '';
-    if (!apiKey) {
-      if (!_warnedMissingApiKey) {
-        console.warn(
-          '[watchup] Server SDK disabled because no apiKey was provided. ' +
-          'Pass apiKey to initWatchup() or set WATCHUP_API_KEY to enable monitoring.',
-        );
-        _warnedMissingApiKey = true;
-      }
-      _instance = createNoopWatchup();
-      return _instance;
-    }
-    _instance = new NodeWatchup({
-      environment: process.env.NODE_ENV,
-      ...options,
-      apiKey,
-    });
+interface Holder {
+  instance: NodeWatchup | null;
+  warnedMissingKey: boolean;
+}
+
+function holder(): Holder {
+  const g = globalThis as unknown as Record<symbol, Holder | undefined>;
+  return (g[KEY] ??= { instance: null, warnedMissingKey: false });
+}
+
+export function assertNodeRuntime(): void {
+  if (process.env.NEXT_RUNTIME === 'edge') {
+    throw new Error(
+      '[watchup] @watchupltd/nextjs/server runs on the Node.js runtime only. ' +
+      "Remove `export const runtime = 'edge'` from this route, or report from the browser with @watchupltd/nextjs/client.",
+    );
   }
-  return _instance;
 }
 
 /**
- * Returns the shared server-side Watchup instance.
- * Throws if `initWatchup()` has not been called yet.
+ * Initialise the shared server client (idempotent — later calls return the
+ * first instance). Call it from `instrumentation.ts`, or use `registerWatchup`.
+ * Without an API key the SDK is disabled and a no-op client is returned.
  */
-export function getWatchup(): NodeWatchup {
-  if (!_instance) {
-    // Auto-init from env for convenience
-    return initWatchup();
+export function initWatchup(options?: Partial<WatchupOptions>): NodeWatchup {
+  assertNodeRuntime();
+  const h = holder();
+  if (h.instance) return h.instance;
+
+  const apiKey = options?.apiKey ?? process.env.WATCHUP_API_KEY ?? '';
+  if (!apiKey) {
+    if (!h.warnedMissingKey) {
+      console.warn(
+        '[watchup] Server SDK disabled because no apiKey was provided. ' +
+        'Pass apiKey to initWatchup() or set WATCHUP_API_KEY to enable monitoring.',
+      );
+      h.warnedMissingKey = true;
+    }
+    h.instance = createNoopWatchup();
+    return h.instance;
   }
-  return _instance;
+
+  h.instance = new NodeWatchup({
+    environment: process.env.NODE_ENV,
+    ...options,
+    apiKey,
+  });
+  return h.instance;
+}
+
+/** The shared server client, initialised from env vars on first use. */
+export function getWatchup(): NodeWatchup {
+  return holder().instance ?? initWatchup();
+}
+
+/**
+ * For `instrumentation.ts`: initialise exactly once, on the Node.js runtime
+ * only (Next calls `register` for every runtime).
+ *
+ * @example
+ * // instrumentation.ts
+ * import { registerWatchup } from '@watchupltd/nextjs/server';
+ * export const register = () => registerWatchup({ release: process.env.GIT_SHA });
+ */
+export function registerWatchup(options?: Partial<WatchupOptions>): void {
+  if (process.env.NEXT_RUNTIME && process.env.NEXT_RUNTIME !== 'nodejs') return;
+  initWatchup(options);
+}
+
+/** Test helper: forget the singleton. */
+export async function _resetWatchup(): Promise<void> {
+  const h = holder();
+  await h.instance?.shutdown();
+  h.instance = null;
+  h.warnedMissingKey = false;
 }

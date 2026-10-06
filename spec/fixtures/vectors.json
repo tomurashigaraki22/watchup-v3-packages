@@ -1,0 +1,244 @@
+{
+  "contract_version": 1,
+  "description": "Shared test vectors for every WatchUp SDK. See spec/README.md and spec/fixtures/README.md.",
+  "constants": {
+    "MAX_CHUNK_BYTES": 196608,
+    "MAX_CHUNK_ITEMS": 100,
+    "BEACON_MAX_BYTES": 61440,
+    "MAX_QUEUE_ITEMS": 1000,
+    "MAX_ATTEMPTS": 5,
+    "BASE_BACKOFF_MS": 1000,
+    "MAX_BACKOFF_MS": 30000,
+    "MAX_RETRY_AFTER_MS": 60000,
+    "TRUNCATE_MESSAGE_BYTES": 8192,
+    "TRUNCATE_STACK_BYTES": 32768,
+    "TRUNCATE_FIELD_BYTES": 8192,
+    "TRUNCATE_MESSAGE_FINAL_BYTES": 1024,
+    "TRUNCATE_STACK_FINAL_BYTES": 4096,
+    "MAX_DEPTH": 10,
+    "MAX_KEYS": 200,
+    "MAX_ARRAY": 200,
+    "REDACTED": "[REDACTED]"
+  },
+  "sdk": { "name": "fixture-sdk", "version": "0.0.0" },
+  "chunking": [
+    {
+      "name": "empty_envelope",
+      "input": { "errors": [], "traces": [], "events": [] },
+      "expect": { "chunks": 0 }
+    },
+    {
+      "name": "one_normal_event",
+      "input": {
+        "events": [
+          { "name": "v0", "occurred_at": "2026-01-01T00:00:00.000Z", "properties": { "plan": "pro" } }
+        ]
+      },
+      "expect": { "chunks": 1, "sequence": [["events:v0"]] }
+    },
+    {
+      "name": "hundred_small_events",
+      "generate": {
+        "events": { "count": 100, "template": { "name": "v{i}", "occurred_at": "2026-01-01T00:00:00.000Z" } }
+      },
+      "expect": { "chunks": 1, "items_per_chunk": [100] }
+    },
+    {
+      "name": "item_count_guard",
+      "generate": {
+        "events": { "count": 101, "template": { "name": "v{i}", "occurred_at": "2026-01-01T00:00:00.000Z" } }
+      },
+      "expect": { "chunks": 2, "items_per_chunk": [100, 1] }
+    },
+    {
+      "name": "large_message_250kib",
+      "generate": {
+        "errors": {
+          "count": 1,
+          "template": {
+            "message": { "$repeat": "x", "times": 256000 },
+            "level": "error",
+            "timestamp": "2026-01-01T00:00:00.000Z"
+          }
+        }
+      },
+      "expect": {
+        "chunks": 1,
+        "truncated": [true],
+        "diagnostics": ["item_truncated"],
+        "max_message_bytes": 8192
+      }
+    },
+    {
+      "name": "unicode_bytes_not_chars",
+      "comment": "Each message is 60 000 characters but 120 000 UTF-8 bytes. Counting characters would put two in one chunk and exceed the limit.",
+      "generate": {
+        "events": {
+          "count": 3,
+          "template": {
+            "name": "v{i}",
+            "occurred_at": "2026-01-01T00:00:00.000Z",
+            "properties": { "text": { "$repeat": "é", "times": 60000 } }
+          }
+        }
+      },
+      "expect": { "chunks": 3, "items_per_chunk": [1, 1, 1], "truncated": [false, false, false] }
+    },
+    {
+      "name": "unicode_truncation",
+      "comment": "70 000 three-byte characters = 210 000 bytes: truncation must cut on a code-point boundary.",
+      "generate": {
+        "errors": {
+          "count": 1,
+          "template": {
+            "message": { "$repeat": "€", "times": 70000 },
+            "level": "error",
+            "timestamp": "2026-01-01T00:00:00.000Z"
+          }
+        }
+      },
+      "expect": { "chunks": 1, "truncated": [true], "max_message_bytes": 8192, "valid_utf8": true }
+    },
+    {
+      "name": "mixed_per_array_order",
+      "options": { "max_items": 4 },
+      "input": {
+        "events": [
+          { "name": "v0", "occurred_at": "2026-01-01T00:00:00.000Z" },
+          { "name": "v1", "occurred_at": "2026-01-01T00:00:00.000Z" },
+          { "name": "v2", "occurred_at": "2026-01-01T00:00:00.000Z" }
+        ],
+        "traces": [
+          { "span": "t0", "ms": 1, "status_code": 200, "status": "ok", "timestamp": "2026-01-01T00:00:00.000Z" },
+          { "span": "t1", "ms": 1, "status_code": 200, "status": "ok", "timestamp": "2026-01-01T00:00:00.000Z" },
+          { "span": "t2", "ms": 1, "status_code": 200, "status": "ok", "timestamp": "2026-01-01T00:00:00.000Z" }
+        ],
+        "errors": [
+          { "message": "e0", "level": "error", "timestamp": "2026-01-01T00:00:00.000Z" },
+          { "message": "e1", "level": "error", "timestamp": "2026-01-01T00:00:00.000Z" },
+          { "message": "e2", "level": "error", "timestamp": "2026-01-01T00:00:00.000Z" }
+        ]
+      },
+      "expect": {
+        "chunks": 3,
+        "sequence": [
+          ["errors:e0", "errors:e1", "errors:e2", "traces:t0"],
+          ["traces:t1", "traces:t2", "events:v0", "events:v1"],
+          ["events:v2"]
+        ]
+      }
+    },
+    {
+      "name": "huge_context_replaced",
+      "generate": {
+        "errors": {
+          "count": 1,
+          "template": {
+            "message": "e0",
+            "level": "error",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "context": { "$object": { "key": "k{j}", "value": { "$repeat": "y", "times": 1500 }, "count": 150 } }
+          }
+        }
+      },
+      "expect": { "chunks": 1, "truncated": [true], "context_marker": true, "diagnostics": ["item_truncated"] }
+    }
+  ],
+  "redaction": [
+    {
+      "name": "keys_and_values",
+      "input": {
+        "headers": {
+          "Authorization": "Bearer abc.def",
+          "Cookie": "sid=1",
+          "Set-Cookie": "sid=2",
+          "X-Request-ID": "req-1"
+        },
+        "user": { "id": "u1", "password": "hunter2", "name": "Ada" },
+        "nested": [{ "api_key": "k1", "access_token": "t1", "tokens_used": 5, "client_secret": 99 }],
+        "credentials": { "a": 1 },
+        "url": "https://app.test/callback?token=abc123&page=2",
+        "note": "header was Bearer abc.def and key wup_live_0123456789abcdef",
+        "basic": "Basic dXNlcjpwYXNz",
+        "card": "4111 1111 1111 1111",
+        "not_a_card": "order 1234567890123",
+        "deep": { "a": { "b": { "refreshToken": "r", "keep": "ok" } } }
+      },
+      "expected": {
+        "headers": {
+          "Authorization": "[REDACTED]",
+          "Cookie": "[REDACTED]",
+          "Set-Cookie": "[REDACTED]",
+          "X-Request-ID": "req-1"
+        },
+        "user": { "id": "u1", "password": "[REDACTED]", "name": "Ada" },
+        "nested": [{ "api_key": "[REDACTED]", "access_token": "[REDACTED]", "tokens_used": 5, "client_secret": "[REDACTED]" }],
+        "credentials": "[REDACTED]",
+        "url": "https://app.test/callback?token=[REDACTED]&page=2",
+        "note": "header was Bearer [REDACTED] and key [REDACTED]",
+        "basic": "Basic [REDACTED]",
+        "card": "[REDACTED]",
+        "not_a_card": "order 1234567890123",
+        "deep": { "a": { "b": { "refreshToken": "[REDACTED]", "keep": "ok" } } }
+      }
+    }
+  ],
+  "flag_buckets": [
+    {"flag": "new-checkout", "id": "user-1", "bucket": 43},
+    {"flag": "new-checkout", "id": "42", "bucket": 32},
+    {"flag": "pricing", "id": "ada@example.com", "bucket": 0},
+    {"flag": "beta", "id": "ünïcødé-用户", "bucket": 80},
+    {"flag": "beta", "id": "😀emoji", "bucket": 80},
+    {"flag": "x", "id": "", "bucket": 3}
+  ],
+  "delivery": [
+    {
+      "name": "retry_reuses_idempotency_key",
+      "items": { "events": 1 },
+      "responses": [503, 200],
+      "expect": { "attempts": 2, "same_idempotency_key": true, "delivered_items": 1, "diagnostics": ["chunk_retry"] }
+    },
+    {
+      "name": "failed_chunk_does_not_block_later_chunks",
+      "items": { "events": 150 },
+      "responses": [503, 200, 200],
+      "expect": {
+        "attempts": 3,
+        "first_pass_keys_distinct": true,
+        "delivered_items": 150,
+        "retried_key_equals_first_key": true
+      }
+    },
+    {
+      "name": "permanent_rejection_is_not_retried",
+      "items": { "events": 1 },
+      "responses": [400],
+      "expect": { "attempts": 1, "delivered_items": 0, "diagnostics": ["chunk_rejected"] }
+    },
+    {
+      "name": "dropped_after_max_attempts",
+      "items": { "errors": 1 },
+      "responses": [500, 500, 500, 500, 500],
+      "expect": { "attempts": 5, "delivered_items": 0, "diagnostics": ["chunk_retry", "chunk_dropped"] }
+    },
+    {
+      "name": "concurrent_flush_no_duplicates",
+      "items": { "events": 250 },
+      "responses": "always_200",
+      "concurrent_flushes": 2,
+      "expect": { "delivered_items": 250, "unique_items": 250 }
+    },
+    {
+      "name": "shutdown_with_pending_items",
+      "items": { "errors": 2, "events": 3 },
+      "responses": "always_200",
+      "expect": { "delivered_items": 5, "pending_after_shutdown": 0 }
+    },
+    {
+      "name": "shutdown_reports_undelivered",
+      "items": { "events": 1 },
+      "responses": "always_503",
+      "expect": { "delivered_items": 0, "diagnostics": ["undelivered_on_shutdown"] }
+    }
+  ]
+}

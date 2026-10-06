@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://watchup.site/schemas/ingest-envelope.v1.json",
+  "title": "WatchUp ingest batch envelope",
+  "description": "Body of POST /api/v1/ingest/batch as sent by WatchUp SDKs (contract v1).",
+  "type": "object",
+  "required": ["errors", "traces", "events", "sdk"],
+  "properties": {
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } },
+    "traces": { "type": "array", "items": { "$ref": "#/$defs/trace" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "sdk": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" }
+      }
+    },
+    "environment": { "type": "string" },
+    "release": { "type": "string" },
+    "idempotency_key": { "type": "string", "pattern": "^wu_[A-Za-z0-9-]+_\\d+$" },
+    "sent_at": { "type": "string" },
+    "project_id": {
+      "type": "string",
+      "description": "Public (wup_pub_ or legacy project-id) key only. Browsers send it so sendBeacon requests authenticate."
+    }
+  },
+  "$defs": {
+    "user": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": ["string", "number"] },
+        "email": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["message", "level", "timestamp"],
+      "properties": {
+        "message": { "type": "string" },
+        "type": { "type": "string", "maxLength": 255 },
+        "level": { "enum": ["debug", "info", "warning", "error", "fatal", "critical"] },
+        "route": { "type": "string" },
+        "stack": { "type": "string" },
+        "context": { "type": "object" },
+        "timestamp": { "type": "string" },
+        "environment": { "type": "string" },
+        "release": { "type": "string" },
+        "user": { "$ref": "#/$defs/user" },
+        "_watchup_truncated": { "type": "boolean" }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["span", "ms", "status_code", "status", "timestamp"],
+      "properties": {
+        "span": { "type": "string", "maxLength": 500 },
+        "ms": { "type": "number", "minimum": 0 },
+        "status_code": { "type": "integer" },
+        "status": { "enum": ["ok", "warn", "err"] },
+        "type": { "enum": ["http", "function", "db", "custom"] },
+        "timestamp": { "type": "string" },
+        "environment": { "type": "string" },
+        "release": { "type": "string" },
+        "meta": { "type": "object" },
+        "user": { "$ref": "#/$defs/user" },
+        "_watchup_truncated": { "type": "boolean" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["name", "occurred_at"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "properties": { "type": "object" },
+        "occurred_at": { "type": "string" },
+        "_watchup_truncated": { "type": "boolean" }
+      }
+    }
+  }
+}

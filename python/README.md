@@ -1,86 +1,89 @@
 # watchup
 
-Official Python SDK for [Watchup](https://watchup.site) — error tracking, request tracing, and custom analytics for Python web applications.
+Official Python SDK for [Watchup](https://watchup.site): error tracking, request tracing, custom events, structured logs, database spans and feature flags.
 
-Works with **Flask**, **Django**, **FastAPI/Starlette**, and any **WSGI** framework. Zero required dependencies — uses the Python standard library only.
+Works with **Flask**, **Django**, **FastAPI/Starlette** (ASGI), any **WSGI** app, **Celery** and the standard `logging` module. No required dependencies — standard library only. Python **3.9–3.13**. Typed (`py.typed`).
 
----
-
-## Installation
+## Install
 
 ```bash
 pip install watchup
 ```
 
-Requires Python 3.9+.
+## Quick start (Flask)
 
----
-
-## Quick start
-
+<!-- example: examples/python_flask.py -->
 ```python
+"""Flask quick start for the watchup Python SDK.
+
+Run: WATCHUP_API_KEY=wup_live_xxx python examples/python_flask.py
+"""
+
+import os
+
+from flask import Flask, request
+
 from watchup import Watchup
 
 watchup = Watchup(
-    api_key="wup_live_xxxxxxxxxxxx",   # Dashboard → Project Settings → API Keys
-    environment="production",
-    release="v1.2.3",                  # optional: git SHA or version tag
+    api_key=os.environ["WATCHUP_API_KEY"],
+    base_url=os.environ.get("WATCHUP_BASE_URL", "https://api.watchup.site"),  # omit in production
+    environment=os.environ.get("APP_ENV", "production"),
+    release=os.environ.get("GIT_SHA"),
+    service="orders-api",
 )
-```
 
----
-
-## Flask
-
-```python
-from flask import Flask
-from watchup import Watchup
-
-watchup = Watchup(api_key="wup_live_xxxxxxxxxxxx")
 app = Flask(__name__)
+watchup.init_app(app)  # request traces, error capture, per-request context
 
-watchup.init_app(app)   # registers before_request, after_request, errorhandler hooks
+
+@app.before_request
+def identify() -> None:
+    user_id = request.headers.get("X-User-ID")
+    if user_id:
+        watchup.set_user(user_id)  # request-scoped
+
+
+@app.get("/orders/<int:order_id>")
+def get_order(order_id: int) -> dict:
+    with watchup.trace_query("SELECT * FROM orders WHERE id = %s", system="postgresql"):
+        order = {"id": order_id}
+    watchup.track("order.viewed", {"order_id": order_id})
+    return order
+
+
+@app.get("/fail")
+def fail() -> str:
+    raise RuntimeError("Something broke")
+
+
+if __name__ == "__main__":
+    # Demo traffic, then a graceful shutdown that flushes everything.
+    client = app.test_client()
+    client.get("/orders/42", headers={"X-User-ID": "user-1"})
+    client.get("/fail")
+    watchup.shutdown()
 ```
 
-`init_app` wires up:
-
-- **Request tracing** — every request is recorded with method, route, status code, and duration
-- **Error capture** — unhandled exceptions are reported with stack trace and request context
-- **Transparent re-raise** — errors still propagate to your own error handlers
-
-Captured Flask exceptions include the exception class, full traceback, normalized
-route, URL, user-agent, client address, request identifiers, and a safe subset of
-request headers. Authorization, cookies, query strings, and request bodies are
-never copied into telemetry.
-
----
+This example runs in CI against a mock ingest server. `init_app` records one trace per request (using the URL rule, e.g. `GET /orders/<int:order_id>`), reports unhandled exceptions through Flask's `got_request_exception` signal — so `404`s and your own error handlers are untouched — and gives every request its own context.
 
 ## Django
 
-Add `WatchupDjangoMiddleware` to your `MIDDLEWARE` list and set `WATCHUP_API_KEY` in `settings.py`:
-
 ```python
 # settings.py
-MIDDLEWARE = [
-    "watchup.WatchupDjangoMiddleware",
-    # ... rest of your middleware
-]
-
-WATCHUP_API_KEY     = "wup_live_xxxxxxxxxxxx"
+MIDDLEWARE = ["watchup.WatchupDjangoMiddleware", ...]
+WATCHUP_API_KEY = "wup_live_xxxxxxxxxxxx"
 WATCHUP_ENVIRONMENT = "production"  # optional
-WATCHUP_RELEASE     = "v1.2.3"     # optional
+WATCHUP_RELEASE = "v1.2.3"          # optional
+WATCHUP_SERVICE = "web"             # optional
+# or: WATCHUP_CLIENT = Watchup(...)  to reuse an existing client
 ```
 
-The middleware creates one client when Django constructs the middleware and reuses it for the lifetime of that middleware instance.
-
----
+Traces use the resolver route (`GET /books/<int:book_id>/`); view exceptions are reported through `process_exception`, and Django's own error handling is unchanged. One client is shared per process.
 
 ## FastAPI / Starlette
 
-Use the built-in ASGI middleware. It records method, normalized path, status code, duration, and safe request metadata:
-
 ```python
-import os
 from fastapi import FastAPI
 from watchup import Watchup, WatchupASGI
 
@@ -89,143 +92,73 @@ app = FastAPI()
 app.add_middleware(WatchupASGI, watchup_client=watchup)
 ```
 
-The middleware captures exceptions as errors and re-raises them. Do not add a second HTTP middleware that calls `start_trace()` for the same request, or the request will be recorded twice.
+Traces use the route template (`GET /items/{item_id}`); each request (and asyncio task) has its own context.
 
----
-
-## WSGI middleware (framework-agnostic)
+## WSGI, Celery and logging
 
 ```python
-import os
-
-from watchup import Watchup, WatchupWSGI
-
-watchup = Watchup(api_key="wup_live_xxxxxxxxxxxx")
-
-# Flask example
-from flask import Flask
-flask_app = Flask(__name__)
-flask_app.wsgi_app = WatchupWSGI(flask_app.wsgi_app, watchup)
-
-# Any WSGI app
+from watchup import WatchupWSGI
 application = WatchupWSGI(application, watchup)
+
+from watchup.integrations.celery import init_celery
+init_celery(watchup)  # one trace per task, failures reported once, per-task context
+
+import logging
+from watchup.integrations.logging import WatchupHandler
+logging.getLogger().addHandler(WatchupHandler(watchup))  # needs Watchup(logging=True)
 ```
 
----
-
-## Manual tracking
-
-### Capture an error
+## Manual instrumentation
 
 ```python
-try:
-    process_order(order_id)
-except Exception as exc:
-    watchup.capture_error(exc, route="job.process_order", order_id=order_id)
+watchup.capture_error(exc, route="job.process_order", order_id=order_id)  # each exception once
+watchup.track("user.signed_up", {"plan": "pro"})
+watchup.capture_log("Invoice retry scheduled", level="info", invoice_id=invoice_id)  # Watchup(logging=True)
+
+with watchup.trace("job.generate_report"):
+    generate_report()
+
+with watchup.trace_query("SELECT * FROM users WHERE email = %s", system="postgresql"):
+    cursor.execute(sql, (email,))  # literals become ?, parameters are never recorded
+
+@watchup.monitor("job.nightly_cleanup")  # own context + trace + error capture
+def nightly_cleanup(): ...
+
+with watchup.request_context(route="job.send_email"):
+    watchup.set_user(job.user_id)  # scoped to this block
 ```
 
-### Track a custom event
+`set_user()` inside a request (or `request_context()`) applies to that request only; outside, it sets the default user.
 
-```python
-watchup.track("user.signed_up", {"plan": "pro", "source": "invite"})
-watchup.track("order.placed", {"amount": 4999, "currency": "NGN"})
-```
-
-### Capture structured logs
-
-Log streaming is opt-in. Captured logs appear in **Live logs** as `log.<level>` events and use the same background batching as events, traces, and errors.
-
-```python
-watchup = Watchup(
-    api_key="wup_live_xxxxxxxxxxxx",
-    logging=True,
-    log_level="info",
-)
-
-watchup.capture_log(
-    "Invoice retry scheduled",
-    level="info",
-    route="job.invoice_retry",
-    invoice_id=invoice_id,
-    retry_attempt=retry_attempt,
-)
-```
-
-Valid levels are `debug`, `info`, `warning`, `error`, and `critical`. Do not put passwords, tokens, payment data, or raw request headers in log context.
-
-### Time an operation
-
-```python
-end = watchup.start_trace("db.query_users")
-try:
-    rows = db.query("SELECT * FROM users")
-    end()                       # status defaults to "ok"
-except Exception as exc:
-    end(status="err", meta={"query": "SELECT * FROM users"})
-    raise
-```
-
----
-
-## User identification
-
-Attach user identity to errors and traces:
-
-```python
-# After authentication — in a middleware or login view
-watchup.set_user("usr_42", email="alice@example.com", name="Alice", plan="pro")
-
-# On logout
-watchup.clear_user()
-```
-
-Once set, every `capture_error`, `start_trace`, and request trace will include the user context.
-
----
-
-## Configuration reference
+## Configuration
 
 | Parameter | Default | Description |
-|---|---|---|
-| `api_key` | *(required)* | Project API key (`wup_live_…`) |
-| `base_url` | `https://api.watchup.site` | Override for self-hosted deployments |
-| `environment` | `WATCHUP_ENV` env var, or `"production"` | Runtime label on every payload |
-| `release` | `None` | App version / git SHA |
-| `flush_interval` | `5.0` | Seconds between automatic flushes |
-| `max_batch_size` | `100` | Item count that triggers an immediate flush |
-| `sample_rate` | `1.0` | Fraction of requests to trace (0–1). Errors are always captured. |
-| `debug` | `False` | Log SDK warnings to stderr |
-| `logging` | `False` | Enable structured server log capture |
-| `log_level` | `"debug"` | Lowest log level to capture |
+| --- | --- | --- |
+| `api_key` | *(required)* | Secret project key (`wup_live_…`). |
+| `base_url` | `https://api.watchup.site` | Self-hosted API URL. |
+| `environment` | `WATCHUP_ENV` / `WATCHUP_ENVIRONMENT`, then `"production"` | Label on every item. |
+| `release` / `service` | `None` | Deploy and service labels. |
+| `flush_interval` | `5.0` | Seconds between background flushes. |
+| `max_batch_size` / `max_queue_size` | `100` / `1000` | Items per request / items kept while the API is unreachable. |
+| `sample_rate` | `1.0` | Fraction of requests traced; errors are always captured. |
+| `logging` / `log_level` | `False` / `"debug"` | Opt-in structured logs. |
+| `redact_keys` | `None` | Extra keys to redact. |
+| `on_diagnostic` | `None` | Delivery diagnostics callback (never captured data). |
+| `flag_refresh_interval` | `30.0` | Feature-flag refresh in seconds; `0` turns flags off. |
+| `shutdown_timeout` / `timeout` | `5.0` / `8.0` | Shutdown and per-request timeouts in seconds. |
+| `debug` | `False` | Log diagnostics through the `watchup` logger. |
 
-Request tracing honors `sample_rate`; errors are captured regardless of the trace sample. Automatically captured request metadata includes the method, normalized path, base URL, user agent, and remote address. Authorization headers, cookies, query strings, and request bodies are never copied into telemetry.
+## Delivery and lifecycle
 
----
-
-## Lifecycle
-
-```python
-# Force an immediate flush
-watchup.flush()
-
-# Stop the background timer and flush remaining items (graceful shutdown)
-watchup.shutdown()
-```
-
-The batcher runs on a daemon thread, retries a failed batch on the next flush, and registers an `atexit` handler. Call `shutdown()` from your process or worker shutdown hook when you need a deterministic final flush.
-
----
+- Items are redacted and serialized when captured; requests stay under 192 KiB and 100 items, and oversized items are truncated rather than dropped.
+- Every request has an `Idempotency-Key`; failures are retried with the same key (backoff with jitter, `Retry-After` honoured).
+- Sending happens on a daemon thread, never on your request thread. `flush()` is synchronous: when it returns, everything queued before the call has been attempted. `shutdown()` waits up to `shutdown_timeout` and also runs at interpreter exit.
+- Fork-safe: a forked worker starts with an empty queue (the parent sends what it had queued).
+- Importing `watchup` makes no network calls.
 
 ## Links
 
-- **Website:** [watchup.site](https://watchup.site)
-- **Documentation:** [watchup.site/docs](https://watchup.site/docs)
-- **Python SDK docs:** [watchup.site/docs/sdks/python](https://watchup.site/docs/sdks/python)
-- **Getting started:** [watchup.site/docs/getting-started](https://watchup.site/docs/getting-started)
-- **Pricing:** [watchup.site/pricing](https://watchup.site/pricing)
-- **Dashboard:** [app.watchup.site](https://watchup.site/login)
-
----
+- [Python SDK docs](https://watchup.site/docs/sdks/python) · [Changelog](./CHANGELOG.md) · [Transport contract](../spec/README.md)
 
 ## License
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 
-
 # ── User ──────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -41,6 +40,7 @@ class TracePayload:
     release: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None
     user: Optional[Dict[str, Any]] = None
+    trace_type: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -50,6 +50,8 @@ class TracePayload:
             "status": self.status,
             "timestamp": self.timestamp,
         }
+        if self.trace_type is not None:
+            d["type"] = self.trace_type
         if self.environment is not None:
             d["environment"] = self.environment
         if self.release is not None:

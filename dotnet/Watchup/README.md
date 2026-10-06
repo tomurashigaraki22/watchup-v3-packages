@@ -1,109 +1,103 @@
 # Watchup .NET SDK
 
-Official .NET SDK for [Watchup](https://watchup.site) — request tracing, error capture, and custom event tracking for ASP.NET Core applications.
+Official .NET SDK for [Watchup](https://watchup.site): request tracing, error capture, custom events and database spans for ASP.NET Core and any .NET application.
 
-## Installation
+- **ASP.NET Core middleware and DI:** .NET 8, 9 and 10 (shared framework).
+- **Core client:** also `netstandard2.1`.
+
+## Install
 
 ```bash
 dotnet add package Watchup
 ```
 
-## Quick start — ASP.NET Core
+## ASP.NET Core
 
 ```csharp
 // Program.cs
+using Watchup;
 using Watchup.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddWatchup(o =>
-{
-    o.ApiKey      = builder.Configuration["Watchup:ApiKey"]!;
-    o.Environment = builder.Environment.EnvironmentName;
-    o.Release     = "1.2.3";   // optional: git SHA or version
-});
+// Binds the "Watchup" section: ApiKey, Environment, Release, Service, ...
+builder.Services.AddWatchup(builder.Configuration.GetSection("Watchup"));
+// or: builder.Services.AddWatchup(o => o.ApiKey = builder.Configuration["Watchup:ApiKey"]!);
 
 var app = builder.Build();
-
 app.UseRouting();
-app.UseWatchup();   // ← after UseRouting so route templates resolve
-app.MapControllers();
-
+app.UseWatchup(); // after UseRouting so route templates resolve
+app.MapGet("/orders/{id:int}", (int id, WatchupClient watchup) =>
+{
+    watchup.SetUser(new WatchupUser($"customer-{id}")); // scoped to this request
+    return Results.Ok(new { id });
+});
 app.Run();
 ```
 
-The middleware automatically captures:
+A complete sample that CI builds lives in [`samples/AspNetCoreSample`](../samples/AspNetCoreSample).
 
-- **Request traces** — method, route template, duration, status code
-- **Unhandled exceptions** — stack trace forwarded as errors
-- **5xx responses** — logged as errors even without an exception
-
----
+The middleware records one trace per request (route template such as `GET /orders/{id:int}`, real status code, duration, request ID and W3C trace ID), reports exceptions once and re-throws them unchanged, and (by default) also reports 5xx responses that did not throw. The client sends through `IHttpClientFactory`, and a hosted service flushes on application shutdown.
 
 ## Manual tracking
-
-Inject `WatchupClient` wherever you need it:
 
 ```csharp
 public class OrderService(WatchupClient watchup)
 {
-    public async Task ProcessOrder(string orderId)
+    public async Task<decimal> TotalAsync(int orderId)
     {
-        // Custom event
-        watchup.Track("order.received", new() { ["orderId"] = orderId });
+        watchup.Track("order.priced", new() { ["order_id"] = orderId });
 
-        // Time a non-HTTP operation
-        using (watchup.StartTrace("job.process_order"))
-        {
-            await DoWork();
-        }
+        using (watchup.StartTrace("job.price_order")) { await Task.Delay(10); }
 
-        // Capture an exception from a background job
-        try { await SendConfirmationEmail(orderId); }
-        catch (Exception ex)
-        {
-            watchup.CaptureError(ex, route: "job.send_confirmation",
-                context: new() { ["orderId"] = orderId });
-        }
+        // Literals become ?, parameters are never recorded; slow queries are marked "warn".
+        return await watchup.TraceQueryAsync("SELECT total FROM orders WHERE id = @id",
+            () => db.QuerySingleAsync<decimal>(sql, new { id = orderId }), system: "postgresql");
     }
 }
 ```
 
----
-
-## Standalone (without DI)
+Outside a request, wrap work in a scope so users don't leak between jobs:
 
 ```csharp
-var watchup = new WatchupClient(new WatchupOptions
+using (WatchupScope.Begin(route: "job.send_email"))
 {
-    ApiKey  = "wup_live_xxxxxxxxxxxx",
-    Debug   = true,   // logs SDK errors to stderr
-});
-
-watchup.Track("user.signed_up");
-watchup.CaptureError(someException);
-
-await watchup.DisposeAsync(); // flushes remaining items
+    watchup.SetUser(new WatchupUser(job.UserId));
+    await SendEmail(job);
+}
 ```
 
----
+## Without DI
 
-## Configuration reference
+```csharp
+await using var watchup = new WatchupClient(new WatchupOptions { ApiKey = "wup_live_..." });
+watchup.CaptureError(new InvalidOperationException("boom"), route: "job.import");
+await watchup.FlushAsync();
+```
 
-| Property | Default | Description |
-|---|---|---|
-| `ApiKey` | *(required)* | Your Watchup project API key |
-| `BaseUrl` | `https://api.watchup.site` | Override for self-hosted deployments |
-| `Environment` | `ASPNETCORE_ENVIRONMENT` | Attached to every payload |
-| `Release` | `null` | App version / git SHA |
-| `FlushInterval` | 5 seconds | How often the queue is flushed |
-| `MaxBatchSize` | 100 | Items per flush per type |
-| `SampleRate` | `1.0` | Fraction of requests to trace (0–1) |
-| `HttpTimeout` | 8 seconds | Timeout per ingest HTTP call |
-| `Debug` | `false` | Log SDK warnings to stderr |
+`DisposeAsync` stops the background loop and delivers what is queued (up to `ShutdownTimeout`).
 
----
+## Configuration
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `ApiKey` | — | **Required.** Secret project key (`wup_live_…`). |
+| `BaseUrl` | `https://api.watchup.site` | Self-hosted API URL. |
+| `Environment` | `ASPNETCORE_ENVIRONMENT`, then `production` | Label on every item. |
+| `Release` / `Service` | — | Deploy and service labels. |
+| `FlushInterval` | 5 s | Background flush interval. |
+| `MaxBatchSize` / `MaxQueueSize` | 100 / 1000 | Items per request / items kept while offline. |
+| `SampleRate` | 1.0 | Fraction of requests traced. |
+| `HttpTimeout` / `ShutdownTimeout` | 8 s / 5 s | Per-request and shutdown timeouts. |
+| `RedactKeys` | empty | Extra keys to redact. |
+| `OnDiagnostic` | — | Delivery diagnostics (never captured data). |
+| `CaptureServerErrorResponses` | `true` | Also report 5xx responses that did not throw. |
+| `Debug` | `false` | Write diagnostics to stderr. |
+
+## Delivery
+
+Items are redacted and serialized when captured; requests stay under 192 KiB and 100 items; oversized items are truncated; every request has an `Idempotency-Key` and failures are retried with the same key. See the [transport contract](../../spec/README.md) and the [changelog](../CHANGELOG.md).
 
 ## License
 
-MIT
+MIT © Watchup Ltd

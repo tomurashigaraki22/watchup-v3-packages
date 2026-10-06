@@ -2,14 +2,15 @@
 // @watchupltd/react  ·  hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Watchup, WatchupUser, TracePayload, FlagContext } from '@watchupltd/browser';
 import { useWatchupContext } from './context.js';
 
-// ── useWatchup ────────────────────────────────────────────────────────────────
+type EndTrace = (opts?: { status?: TracePayload['status']; meta?: Record<string, unknown> }) => void;
 
 /**
- * Returns the `Watchup` instance from the nearest `<WatchupProvider>`.
+ * Returns the `Watchup` client from the nearest `<WatchupProvider>`
+ * (a no-op client during server rendering).
  *
  * @example
  * const watchup = useWatchup();
@@ -19,113 +20,101 @@ export function useWatchup(): Watchup {
   return useWatchupContext();
 }
 
-// ── useTrack ──────────────────────────────────────────────────────────────────
-
 /**
- * Returns a stable `track` callback — safe to pass as a prop or include in
- * dependency arrays without causing unnecessary re-renders.
+ * Stable `track` callback — safe in props and dependency arrays.
  *
  * @example
  * const track = useTrack();
- * <button onClick={() => track('button.clicked', { id: 'cta' })}>
- *   Get started
- * </button>
+ * <button onClick={() => track('button.clicked', { id: 'cta' })}>Get started</button>
  */
 export function useTrack(): (name: string, properties?: Record<string, unknown>) => void {
   const watchup = useWatchupContext();
-  return useCallback(
-    (name: string, props?: Record<string, unknown>) => watchup.track(name, props),
-    [watchup],
-  );
+  return useCallback((name, props) => watchup.track(name, props), [watchup]);
 }
 
-// ── useStartTrace ─────────────────────────────────────────────────────────────
-
 /**
- * Returns a stable `startTrace` callback.
+ * Stable `startTrace` callback.
  *
  * @example
  * const startTrace = useStartTrace();
- *
- * const handleSubmit = async () => {
- *   const end = startTrace('form.submit /api/signup');
- *   await submitForm(data);
- *   end({ status: 'ok' });
- * };
+ * const end = startTrace('form.submit /api/signup');
+ * await submit();
+ * end();
  */
-// ── useIdentify ───────────────────────────────────────────────────────────────
-
-/**
- * Identify the current user so all errors and traces are linked to them.
- * Pass `null` to clear (e.g. after logout).
- *
- * @example
- * const { user } = useAuth();
- * useIdentify(user ? { id: user.id, email: user.email, name: user.name } : null);
- */
-export function useIdentify(user: WatchupUser | null | undefined): void {
-  const watchup = useWatchupContext();
-  useEffect(() => {
-    if (user) {
-      watchup.setUser(user);
-    } else {
-      watchup.clearUser();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-}
-
-export function useStartTrace(): (
-  span: string,
-) => (opts?: { status?: TracePayload['status']; meta?: Record<string, unknown> }) => void {
+export function useStartTrace(): (span: string) => EndTrace {
   const watchup = useWatchupContext();
   return useCallback((span: string) => watchup.startTrace(span), [watchup]);
 }
 
-// ── useFlag ───────────────────────────────────────────────────────────────────
+/**
+ * Identify the current user; pass `null` to clear (e.g. after logout).
+ * Re-runs only when the user's id, email or name changes.
+ *
+ * @example
+ * useIdentify(user ? { id: user.id, email: user.email } : null);
+ */
+export function useIdentify(user: WatchupUser | null | undefined): void {
+  const watchup = useWatchupContext();
+  const latest = useRef(user);
+  latest.current = user;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run only when identity fields change, not on every new object
+  useEffect(() => {
+    if (latest.current) watchup.setUser(latest.current);
+    else watchup.clearUser();
+  }, [watchup, user?.id, user?.email, user?.name]);
+}
 
 /**
- * Returns whether a feature flag is enabled. Re-evaluates when the SDK
- * refreshes its flag cache (every 30s) or when `key`/`ctx` change.
+ * Record a page view whenever `path` changes. Use with your router and set
+ * `autoCapture.pageViews: false` on the provider to avoid double counting.
+ *
+ * @example
+ * const { pathname } = useLocation();
+ * usePageView(pathname);
+ */
+export function usePageView(path: string): void {
+  const watchup = useWatchupContext();
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    // StrictMode runs effects twice; track each distinct path once.
+    if (last.current === path) return;
+    last.current = path;
+    watchup.trackWebView();
+  }, [watchup, path]);
+}
+
+function useFlagValue<T>(read: () => T, watchup: Watchup): T {
+  return useSyncExternalStore(
+    useCallback((onChange: () => void) => watchup.onFlagsChange(onChange), [watchup]),
+    read,
+    read,
+  );
+}
+
+/**
+ * Whether a feature flag is enabled. Re-renders when the flag cache refreshes.
  *
  * @example
  * const newCheckout = useFlag('new-checkout');
- * return newCheckout ? <NewCheckout /> : <OldCheckout />;
  */
 export function useFlag(key: string, ctx?: FlagContext): boolean {
   const watchup = useWatchupContext();
-  const [enabled, setEnabled] = useState(() => watchup.isEnabled(key, ctx));
-
-  useEffect(() => {
-    setEnabled(watchup.isEnabled(key, ctx));
-    const id = setInterval(() => setEnabled(watchup.isEnabled(key, ctx)), 5_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchup, key, JSON.stringify(ctx)]);
-
-  return enabled;
+  const ctxKey = JSON.stringify(ctx ?? {});
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ctx is compared by value through ctxKey
+  const read = useCallback(() => watchup.isEnabled(key, ctx), [watchup, key, ctxKey]);
+  return useFlagValue(read, watchup);
 }
 
-// ── useVariant ────────────────────────────────────────────────────────────────
-
 /**
- * Returns the variant key for a multivariate (A/B) flag.
- * Returns `"control"` if the flag is off or the user isn't in the rollout.
+ * Variant key for a multivariate flag (`"control"` when off).
  *
  * @example
  * const variant = useVariant('pricing-layout');
- * // → "control" | "variant-a" | "variant-b"
  */
 export function useVariant(key: string, ctx?: FlagContext): string {
   const watchup = useWatchupContext();
-  const [variant, setVariant] = useState(() => watchup.getVariant(key, ctx));
-
-  useEffect(() => {
-    setVariant(watchup.getVariant(key, ctx));
-    const id = setInterval(() => setVariant(watchup.getVariant(key, ctx)), 5_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchup, key, JSON.stringify(ctx)]);
-
-  return variant;
+  const ctxKey = JSON.stringify(ctx ?? {});
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ctx is compared by value through ctxKey
+  const read = useCallback(() => watchup.getVariant(key, ctx), [watchup, key, ctxKey]);
+  return useFlagValue(read, watchup);
 }

@@ -2,56 +2,48 @@
 // @watchupltd/browser  ·  global error capture
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ErrorPayload } from './types.js';
-
-type ErrorCallback = (error: ErrorPayload) => void;
+export interface CapturedGlobalError {
+  error: unknown;
+  message: string;
+  context: Record<string, unknown>;
+}
 
 /**
- * Attaches `window.onerror` and `window.addEventListener('unhandledrejection')`
- * listeners that forward caught errors to `onError`.
- *
- * Returns a cleanup function that removes both listeners.
+ * Attaches `error` and `unhandledrejection` listeners and forwards each one
+ * to `onError`, which builds the payload (so user, route and device context
+ * are attached at capture time). Returns a cleanup function.
  */
-export function captureGlobalErrors(onError: ErrorCallback, env?: string): () => void {
+export function captureGlobalErrors(onError: (captured: CapturedGlobalError) => void): () => void {
   const handleError = (event: ErrorEvent) => {
+    // Resource load failures (img/script 404s) arrive without an Error object
+    // and without a message; they are not JavaScript exceptions.
+    if (!event.message && !event.error) return;
     onError({
-      message:   event.message || 'Unknown error',
-      level:     'error',
-      route:     window.location.pathname,
-      stack:     event.error?.stack,
+      error: event.error,
+      message: event.message || 'Unknown error',
       context: {
-        url:    window.location.href,
-        source: event.filename ?? undefined,
-        line:   event.lineno  ?? undefined,
-        col:    event.colno   ?? undefined,
+        mechanism: 'onerror',
+        ...(event.filename && { source: event.filename }),
+        ...(event.lineno && { line: event.lineno }),
+        ...(event.colno && { col: event.colno }),
       },
-      timestamp:   new Date().toISOString(),
-      ...(env && { environment: env }),
     });
   };
 
   const handleRejection = (event: PromiseRejectionEvent) => {
     const reason = event.reason;
-    const isErr  = reason instanceof Error;
     onError({
-      message:   isErr ? reason.message : String(reason ?? 'Unhandled Promise rejection'),
-      level:     'error',
-      route:     window.location.pathname,
-      stack:     isErr ? reason.stack : undefined,
-      context: {
-        url:  window.location.href,
-        type: 'unhandledrejection',
-      },
-      timestamp:   new Date().toISOString(),
-      ...(env && { environment: env }),
+      error: reason,
+      message: reason instanceof Error ? reason.message : String(reason ?? 'Unhandled Promise rejection'),
+      context: { mechanism: 'unhandledrejection' },
     });
   };
 
-  window.addEventListener('error',              handleError);
+  window.addEventListener('error', handleError);
   window.addEventListener('unhandledrejection', handleRejection);
 
   return () => {
-    window.removeEventListener('error',              handleError);
+    window.removeEventListener('error', handleError);
     window.removeEventListener('unhandledrejection', handleRejection);
   };
 }

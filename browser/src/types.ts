@@ -2,6 +2,18 @@
 // @watchupltd/browser  ·  types
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { Diagnostic } from '@watchupltd/core';
+
+export type {
+  Diagnostic,
+  DiagnosticType,
+  FlushResult,
+  FeatureFlag,
+  FlagContext,
+  FlagVariant,
+  FlagTargetingRule,
+} from '@watchupltd/core';
+
 export interface WatchupUser {
   /** Your app's internal user ID — the only required field. */
   id: string | number;
@@ -40,8 +52,26 @@ export interface WatchupOptions {
   /** Flush interval in ms. Default: `5000`. */
   flushInterval?: number;
 
-  /** Max items before forcing a flush. Default: `100`. */
+  /** Max items per request (capped at the server's 100). Default: `100`. */
   maxBatchSize?: number;
+
+  /**
+   * Max items held in memory while offline or retrying. The oldest events are
+   * dropped first, errors last. Default: `1000`.
+   */
+  maxQueueSize?: number;
+
+  /** Extra keys to redact in captured context, on top of the built-in list. */
+  redactKeys?: string[];
+
+  /**
+   * Called for SDK delivery diagnostics (truncation, retries, drops).
+   * Never receives captured data or keys.
+   */
+  onDiagnostic?: (diagnostic: Diagnostic) => void;
+
+  /** Feature-flag refresh interval in ms. Default: `30000`. `0` turns flags off (no requests). */
+  flagRefreshInterval?: number;
 
   /** Log SDK warnings to `console.warn`. Default: `false`. */
   debug?: boolean;
@@ -75,12 +105,16 @@ export interface WatchupOptions {
 
   /** Explicit, opt-in structured browser logging. */
   logging?: LoggingOptions;
+
+  /** Service name attached to errors, traces and logs (e.g. `"web"`). */
+  service?: string;
 }
 
 // ── Ingest payload shapes ─────────────────────────────────────────────────────
 
 export interface TracePayload {
   span:        string;
+  type?:       'http' | 'function' | 'db' | 'custom';
   ms:          number;
   status_code: number;
   status:      'ok' | 'warn' | 'err';
@@ -93,6 +127,8 @@ export interface TracePayload {
 
 export interface ErrorPayload {
   message:     string;
+  /** Error class name, e.g. `"TypeError"`. */
+  type?:       string;
   level:       'debug' | 'info' | 'warning' | 'error' | 'fatal';
   route?:      string;
   stack?:      string;
@@ -113,35 +149,6 @@ export type LogContext = Record<string, unknown> & {
   level?: LogLevel;
   route?: string;
 };
-
-export interface FlagVariant {
-  key: string;
-  weight: number;
-}
-
-export interface FlagTargetingRule {
-  attribute: string;
-  operator: 'in' | 'not_in' | 'contains' | 'equals';
-  values: string[];
-}
-
-export interface FeatureFlag {
-  id: string;
-  key: string;
-  name: string;
-  description?: string;
-  enabled: boolean;
-  rollout_percentage: number;
-  variants: FlagVariant[];
-  targeting_rules: FlagTargetingRule[];
-}
-
-export interface FlagContext {
-  userId?: string | number;
-  email?: string;
-  plan?: string;
-  [key: string]: unknown;
-}
 
 export interface IngestBatch {
   traces?: TracePayload[];
@@ -192,4 +199,6 @@ export interface WebAnalyticsPayload {
 
 export interface WebAnalyticsBatch {
   web: WebAnalyticsPayload[];
+  /** Public key, so sendBeacon requests (which cannot set headers) authenticate. */
+  project_id?: string;
 }

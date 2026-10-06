@@ -20,3 +20,17 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Fixture build output
+fixtures/**/.next/
+fixtures/**/out/
+fixtures/**/.svelte-kit/
+fixtures/**/build/
+next-env.d.ts
+
+# Python virtualenvs
+.venv/
+
+# Playwright
+test-results/
+playwright-report/

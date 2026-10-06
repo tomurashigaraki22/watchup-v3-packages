@@ -1,58 +1,42 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // @watchupltd/node  ·  transport
 //
-// Thin HTTP layer around fetch (Node ≥ 18 built-in).
-// All failures are swallowed — the SDK must never crash the host application.
+// Thin HTTP layer around fetch (Node ≥ 18 built-in). Never throws — failures
+// become SendResults so the queue can decide whether to retry.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { IngestBatch } from './types.js';
+import { INGEST_PATH, ingestHeaders, toSendResult, type Chunk, type SendResult } from '@watchupltd/core';
+import { SDK_NAME, SDK_VERSION } from './version.js';
 
 export class Transport {
   private readonly url: string;
-  private readonly headers: Record<string, string>;
-  private readonly debug: boolean;
-  private readonly debugLogger: (...args: unknown[]) => void;
 
   constructor(
     baseUrl: string,
-    apiKey: string,
-    debug = false,
-    debugLogger: (...args: unknown[]) => void = console.warn.bind(console),
+    private readonly apiKey: string,
+    private readonly timeoutMs = 8_000,
   ) {
-    this.url   = `${baseUrl.replace(/\/$/, '')}/api/v1/ingest/batch`;
-    this.headers = {
-      'Content-Type': 'application/json',
-      'X-Api-Key':    apiKey,
-      'User-Agent':   `@watchupltd/node`,
-    };
-    this.debug = debug;
-    this.debugLogger = debugLogger;
+    this.url = `${baseUrl.replace(/\/+$/, '')}${INGEST_PATH}`;
   }
 
-  /**
-   * POST `batch` to the Watchup ingest endpoint.
-   * Never rejects — any error is logged (if debug) and silently dropped.
-   */
-  async send(batch: IngestBatch): Promise<void> {
+  async send(chunk: Chunk): Promise<SendResult> {
     try {
       const res = await fetch(this.url, {
-        method:  'POST',
-        headers: this.headers,
-        body:    JSON.stringify(batch),
-        // 8-second hard timeout; slow API shouldn't hold up the queue.
-        signal:  AbortSignal.timeout(8_000),
+        method: 'POST',
+        headers: ingestHeaders({
+          apiKey: this.apiKey,
+          sdk: { name: SDK_NAME, version: SDK_VERSION },
+          idempotencyKey: chunk.idempotencyKey,
+          includeIdempotencyHeader: true,
+          includeUserAgent: true,
+        }),
+        body: chunk.body,
+        // A slow API must not hold the queue forever.
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
-
-      if (this.debug && !res.ok) {
-        const body = await res.text().catch(() => '(no body)');
-        this.debugLogger(`[watchup] ingest ${res.status}: ${body}`);
-      }
+      return await toSendResult(res);
     } catch (err) {
-      if (this.debug) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.debugLogger(`[watchup] send failed: ${msg}`);
-      }
-      // Intentionally no re-throw.
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 }

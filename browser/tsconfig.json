@@ -1,17 +1,28 @@
 {
   "compilerOptions": {
-    "target":           "ES2019",
-    "lib":              ["ES2019", "DOM", "DOM.Iterable"],
-    "module":           "ESNext",
+    "target": "ES2019",
+    "lib": [
+      "ES2019",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
     "moduleResolution": "Bundler",
-    "strict":           true,
-    "skipLibCheck":     true,
-    "declaration":      true,
-    "declarationMap":   true,
-    "sourceMap":        true,
-    "outDir":           "dist",
-    "rootDir":          "src",
-    "types":            []
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "@watchupltd/core": [
+        "../core/src/index.ts"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -1,7 +1,7 @@
 {
   "name": "@watchupltd/react",
-  "version": "0.2.2",
-  "description": "Official Watchup SDK for React — provider, error boundary, and hooks",
+  "version": "0.3.0",
+  "description": "Official Watchup SDK for React \u2014 provider, error boundary, and hooks",
   "license": "MIT",
   "author": "Watchup Ltd",
   "main": "./dist/index.js",
@@ -9,27 +9,37 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types":   "./dist/index.d.ts",
-      "import":  "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "scripts": {
-    "build":     "tsup",
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "dev":       "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run --root .. --project react"
   },
   "peerDependencies": {
-    "@watchupltd/browser": "^0.2.0",
+    "@watchupltd/browser": "^0.3.0",
     "react": ">=18.0.0"
   },
   "devDependencies": {
-    "@types/react":       "^18.3.3",
+    "@types/react": "^18.3.3",
     "@watchupltd/browser": "*",
-    "react":              "^18.3.1",
-    "tsup":               "^8.0.2",
-    "typescript":         "^5.4.5"
-  }
+    "react": "^18.3.1",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomurashigaraki22/watchup-v3-packages.git",
+    "directory": "react"
+  },
+  "homepage": "https://watchup.site/docs/sdks/react"
 }

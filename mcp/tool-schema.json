@@ -1,0 +1,575 @@
+{
+  "schema_version": "2.0",
+  "tools": [
+    {
+      "name": "watchup_create_bug_report",
+      "description": "Create a community bug report with optional linked WatchUp evidence. Requires WATCHUP_TOKEN and WATCHUP_READ_ONLY=false.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 20000
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "affected_feature": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "error",
+              "log",
+              "trace",
+              "alert",
+              "manual"
+            ]
+          },
+          "evidence_id": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_create_community_post",
+      "description": "Create a community discussion, feature request, or bug report. Requires WATCHUP_TOKEN and WATCHUP_READ_ONLY=false.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "feature_request",
+              "bug_report"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 20000
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "maxItems": 10
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_create_feature_flag",
+      "description": "Create a feature flag for a project. Requires WATCHUP_TOKEN and WATCHUP_READ_ONLY=false.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rollout_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_get_overview",
+      "description": "Fetch the project overview: health, throughput, latency, recent activity, and readiness state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_get_project",
+      "description": "Fetch metadata and health information for a WatchUp project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_health",
+      "description": "Check whether the WatchUp MCP server is configured and ready.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_alert_channels",
+      "description": "List configured alert channels for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_alerts",
+      "description": "List alert rules and incidents for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_community_posts",
+      "description": "Search community discussions, feature requests, and bug reports.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "feature_request",
+              "bug_report"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_databases",
+      "description": "List database monitors and their latest health metrics for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_endpoints",
+      "description": "List endpoint performance and request metrics for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "description": "Time window (default 24h)."
+          },
+          "trace_type": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Filter by trace type (http, db, function, custom)."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_errors",
+      "description": "List recent captured errors and error groups for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_events",
+      "description": "List recent project events, including SDK log events.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_feature_flags",
+      "description": "List feature flags and rollout state for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_logs",
+      "description": "List structured Live logs entries for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_projects",
+      "description": "List WatchUp projects available to the token.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_roadmap",
+      "description": "List community feature requests grouped by roadmap state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_server_agents",
+      "description": "List server agents and infrastructure health for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_shipped",
+      "description": "List shipped community requests and changelog-style posts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_traces",
+      "description": "List recent request traces and latency context for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "watchup_list_web_analytics",
+      "description": "Fetch web analytics for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project ID. Defaults to WATCHUP_DEFAULT_PROJECT_ID."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Max items to return (default 50, max 200)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based page number."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "description": "Time window (default 24h)."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ]
+}

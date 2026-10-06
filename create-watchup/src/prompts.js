@@ -1,4 +1,4 @@
-const readline = require("readline/promises");
+const readline = require("node:readline/promises");
 
 async function ask(question, fallback = "") {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

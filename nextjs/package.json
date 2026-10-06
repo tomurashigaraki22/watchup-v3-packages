@@ -1,7 +1,7 @@
 {
   "name": "@watchupltd/nextjs",
-  "version": "0.2.2",
-  "description": "Official Watchup SDK for Next.js — App Router provider, server singleton, and route wrapper",
+  "version": "0.3.0",
+  "description": "Official Watchup SDK for Next.js \u2014 App Router provider, server singleton, and route wrapper",
   "license": "MIT",
   "author": "Watchup Ltd",
   "exports": {
@@ -24,12 +24,13 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run --root .. --project nextjs"
   },
   "peerDependencies": {
-    "@watchupltd/browser": "^0.2.0",
-    "@watchupltd/node": "^0.2.0",
-    "@watchupltd/react": "^0.2.0",
+    "@watchupltd/browser": "^0.3.0",
+    "@watchupltd/node": "^0.3.0",
+    "@watchupltd/react": "^0.3.0",
     "next": ">=14.0.0",
     "react": ">=18.0.0"
   },
@@ -42,5 +43,11 @@
     "react": "^18.3.1",
     "tsup": "^8.0.2",
     "typescript": "^5.4.5"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomurashigaraki22/watchup-v3-packages.git",
+    "directory": "nextjs"
+  },
+  "homepage": "https://watchup.site/docs/sdks/nextjs"
 }

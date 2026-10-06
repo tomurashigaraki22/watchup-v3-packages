@@ -1,7 +1,7 @@
 {
   "name": "@watchupltd/svelte",
-  "version": "0.2.2",
-  "description": "Official Watchup SDK for Svelte / SvelteKit — provider, context, and actions",
+  "version": "0.3.0",
+  "description": "Official Watchup SDK for Svelte / SvelteKit \u2014 provider, context, and actions",
   "license": "MIT",
   "author": "Watchup Ltd",
   "main": "./dist/index.js",
@@ -9,27 +9,54 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types":   "./dist/index.d.ts",
-      "import":  "./dist/index.mjs",
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.mjs",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     },
-    "./WatchupProvider.svelte": "./src/WatchupProvider.svelte"
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs",
+      "require": "./dist/server.js"
+    },
+    "./WatchupProvider.svelte": {
+      "types": "./dist/WatchupProvider.svelte.d.ts",
+      "svelte": "./dist/WatchupProvider.svelte",
+      "default": "./dist/WatchupProvider.svelte"
+    }
   },
-  "files": ["dist", "src/WatchupProvider.svelte", "README.md"],
-  "sideEffects": ["./src/WatchupProvider.svelte"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
   "scripts": {
-    "build":     "tsup",
+    "build": "tsup && node -e \"const fs=require('fs');for(const f of ['WatchupProvider.svelte','WatchupProvider.svelte.d.ts'])fs.copyFileSync('src/'+f,'dist/'+f)\"",
     "typecheck": "tsc --noEmit",
-    "dev":       "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run --root .. --project svelte"
   },
   "peerDependencies": {
-    "@watchupltd/browser": "^0.2.0",
+    "@watchupltd/browser": "^0.3.0",
+    "@watchupltd/node": "^0.3.0",
     "svelte": ">=4.0.0"
   },
   "devDependencies": {
     "@watchupltd/browser": "*",
-    "svelte":              "^4.2.18",
-    "tsup":                "^8.0.2",
-    "typescript":          "^5.4.5"
-  }
+    "svelte": "^4.2.18",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5"
+  },
+  "svelte": "./dist/index.mjs",
+  "peerDependenciesMeta": {
+    "@watchupltd/node": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomurashigaraki22/watchup-v3-packages.git",
+    "directory": "svelte"
+  },
+  "homepage": "https://watchup.site/docs/sdks/svelte"
 }

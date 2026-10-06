@@ -1,58 +1,80 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Watchup .NET SDK  ·  Transport
 //
-// Thin HTTP layer around HttpClient.
-// All failures are swallowed — the SDK must never crash the host application.
+// Posts one chunk. Never throws: failures become SendResults so the queue can
+// decide about retries.
 // ─────────────────────────────────────────────────────────────────────────────
 
-using System.Net.Http.Json;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 
 namespace Watchup;
 
 internal sealed class Transport
 {
-    private readonly HttpClient    _http;
-    private readonly string        _url;
-    private readonly bool          _debug;
+    private readonly HttpClient _http;
+    private readonly Uri _url;
+    private readonly string _apiKey;
+    private readonly TimeSpan _timeout;
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    internal Transport(HttpClient http, string baseUrl, string apiKey, TimeSpan timeout)
     {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
-
-    internal Transport(HttpClient http, string baseUrl, bool debug)
-    {
-        _http  = http;
-        _url   = $"{baseUrl.TrimEnd('/')}/api/v1/ingest/batch";
-        _debug = debug;
+        _http = http;
+        _url = new Uri($"{baseUrl.TrimEnd('/')}/api/v1/ingest/batch");
+        _apiKey = apiKey;
+        _timeout = timeout;
     }
 
-    /// <summary>
-    /// POST <paramref name="batch"/> to the Watchup ingest endpoint.
-    /// Never throws — any error is logged (if debug) and silently dropped.
-    /// </summary>
-    internal async Task SendAsync(IngestBatch batch, CancellationToken ct = default)
+    internal async Task<SendResult> SendAsync(Chunk chunk, CancellationToken ct)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(_timeout);
         try
         {
-            using var response = await _http
-                .PostAsJsonAsync(_url, batch, JsonOpts, ct)
-                .ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Post, _url)
+            {
+                Content = new StringContent(chunk.Body, Encoding.UTF8, "application/json"),
+            };
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
+            request.Headers.TryAddWithoutValidation("X-Api-Key", _apiKey);
+            request.Headers.TryAddWithoutValidation("Idempotency-Key", chunk.IdempotencyKey);
+            request.Headers.TryAddWithoutValidation("User-Agent", $"{WatchupClient.SdkName}/{WatchupClient.SdkVersion}");
 
-            if (_debug && !response.IsSuccessStatusCode)
+            using var response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            var status = (int)response.StatusCode;
+            if (response.IsSuccessStatusCode) return new SendResult(true, status);
+
+            string? code = null;
+            try
             {
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Console.Error.WriteLine($"[watchup] ingest {(int)response.StatusCode}: {body}");
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String) code = c.GetString();
             }
+            catch
+            {
+                // Non-JSON error body.
+            }
+            if (code is null && response.StatusCode == HttpStatusCode.RequestEntityTooLarge) code = "payload_too_large";
+            return new SendResult(false, status, code, RetryAfter(response));
         }
-        catch (Exception ex) when (_debug)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            Console.Error.WriteLine($"[watchup] send failed: {ex.Message}");
+            return new SendResult(false, Error: $"Timed out after {_timeout.TotalSeconds:0}s");
         }
-        catch
+        catch (Exception ex)
         {
-            // Intentionally swallowed — SDK must never crash the host.
+            return new SendResult(false, Error: ex.Message);
         }
+    }
+
+    private static TimeSpan? RetryAfter(HttpResponseMessage response)
+    {
+        var header = response.Headers.RetryAfter;
+        TimeSpan? delay = header?.Delta ?? (header?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (delay is null) return null;
+        var max = TimeSpan.FromMilliseconds(WatchupLimits.MaxRetryAfterMs);
+        return delay < TimeSpan.Zero ? TimeSpan.Zero : delay > max ? max : delay;
     }
 }

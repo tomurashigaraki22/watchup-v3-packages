@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "watchup"
-version = "2.0.0"
+version = "2.1.0"
 description = "Official Watchup SDK for Python — error tracking, request tracing, and custom analytics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,6 +30,8 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
   "Topic :: Software Development :: Libraries",
   "Topic :: System :: Monitoring",
 ]
@@ -43,14 +45,57 @@ dependencies = []
 flask   = ["flask>=2.0"]
 django  = ["django>=3.2"]
 fastapi = ["fastapi>=0.95", "starlette>=0.27"]
-dev     = ["pytest>=8", "flask>=2.0", "responses>=0.25"]
+celery  = ["celery>=5.2"]
+dev     = ["pytest>=8", "flask>=2.3", "django>=4.2", "starlette>=0.27", "httpx>=0.24", "ruff>=0.6", "mypy>=1.10"]
 
 [project.urls]
 Homepage      = "https://watchup.site"
 Documentation = "https://watchup.site/docs/sdks/python"
-Repository    = "https://github.com/watchupltd/watchup-sdk"
-Issues        = "https://github.com/watchupltd/watchup-sdk/issues"
+Repository    = "https://github.com/tomurashigaraki22/watchup-v3-packages/tree/main/python"
+Issues        = "https://github.com/tomurashigaraki22/watchup-v3-packages/issues"
+Changelog     = "https://github.com/tomurashigaraki22/watchup-v3-packages/blob/main/python/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["watchup*"]
+
+[tool.setuptools.package-data]
+watchup = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 170
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE"]
+ignore = [
+  "UP006", "UP007", "UP035", "UP045",  # keep typing.Optional/List for 3.9 readers
+  "S101",                              # assert in tests
+  "S310",                              # urllib with a configured https base URL
+  "BLE001",                            # the SDK must never raise into the host app
+  "S110",                              # deliberate silent excepts (same reason)
+  "B904",
+  "S311",                              # sampling/jitter randomness, not crypto
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S603", "S105", "S106", "B017"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = false
+files = ["watchup"]
+
+[[tool.mypy.overrides]]
+# Optional frameworks are imported lazily and may be untyped or absent.
+module = ["django.*", "celery.*", "flask.*", "starlette.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["watchup.middleware"]
+disallow_untyped_decorators = false

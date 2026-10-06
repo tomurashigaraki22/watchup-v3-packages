@@ -3,18 +3,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getContext, setContext } from 'svelte';
-import type { Watchup }          from '@watchupltd/browser';
+import { WatchupHandle } from './client.js';
 
-const KEY = Symbol('watchup');
+const KEY = Symbol.for('watchup.svelte');
 
-/** Called internally by WatchupProvider. */
-export function _setWatchupContext(instance: Watchup): void {
-  setContext(KEY, instance);
+/**
+ * The most recently mounted provider's handle. Actions and event handlers run
+ * outside component initialisation, where getContext() is not allowed, so
+ * they fall back to this.
+ */
+let active: WatchupHandle | null = null;
+
+/** Called internally by WatchupProvider during component init. */
+export function _createWatchupContext(): WatchupHandle {
+  const handle = new WatchupHandle();
+  setContext(KEY, handle);
+  return handle;
+}
+
+export function _setActive(handle: WatchupHandle | null): void {
+  active = handle;
+}
+
+export function _getActive(): WatchupHandle | null {
+  return active;
 }
 
 /**
- * Returns the `Watchup` instance from the nearest `<WatchupProvider>`.
- * Call this at component initialisation time (not inside event handlers).
+ * Returns the WatchUp handle from the nearest `<WatchupProvider>`. Works during
+ * component init and — via the active provider — in actions and event
+ * handlers. Safe during SSR (calls are no-ops on the server).
  *
  * @example
  * <script>
@@ -23,13 +41,16 @@ export function _setWatchupContext(instance: Watchup): void {
  * </script>
  * <button on:click={() => watchup.track('button.clicked')}>Click me</button>
  */
-export function getWatchup(): Watchup {
-  const instance = getContext<Watchup | undefined>(KEY);
-  if (!instance) {
-    throw new Error(
-      '[watchup] getWatchup() must be called inside a component ' +
-      'that is a descendant of <WatchupProvider>.',
-    );
+export function getWatchup(): WatchupHandle {
+  let fromContext: WatchupHandle | undefined;
+  try {
+    fromContext = getContext<WatchupHandle | undefined>(KEY);
+  } catch {
+    // Outside component init (actions, handlers) — use the active provider.
   }
-  return instance;
+  const handle = fromContext ?? active;
+  if (!handle) {
+    throw new Error('[watchup] getWatchup() needs a <WatchupProvider> higher in the component tree.');
+  }
+  return handle;
 }

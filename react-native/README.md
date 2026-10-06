@@ -1,36 +1,29 @@
 # @watchupltd/react-native
 
-Expo and React Native-friendly WatchUp SDK for JavaScript errors, structured logs, events, and traces.
-
-This first release is JS-only. It does not require native modules, config plugins, or ejecting from Expo.
+Official WatchUp SDK for **React Native and Expo**: JS exceptions, unhandled promise rejections, screens, custom events, traces, logs and user identity — with an offline queue that survives restarts.
 
 ## Install
 
 ```bash
 npm install @watchupltd/react-native
+# Recommended, for offline delivery:
+npx expo install @react-native-async-storage/async-storage @react-native-community/netinfo
 ```
+
+Supports React Native 0.72+ and Expo SDK 50+, on Hermes and JSC.
 
 ## Provider
 
 ```tsx
-import { WatchupProvider } from "@watchupltd/react-native";
+import { WatchupProvider } from '@watchupltd/react-native';
 
 export default function App() {
   return (
     <WatchupProvider
-      apiKey="wup_pub_xxx"
-      options={{
-        environment: "production",
-        release: "1.0.0",
-        logging: {
-          enabled: true,
-          captureConsole: true,
-          includeDeviceContext: true,
-          minLevel: "debug",
-        },
-      }}
+      apiKey={process.env.EXPO_PUBLIC_WATCHUP_API_KEY!} // public wup_pub_ key
+      options={{ environment: __DEV__ ? 'development' : 'production', release: '1.4.0' }}
     >
-      <Root />
+      <Navigation />
     </WatchupProvider>
   );
 }
@@ -39,36 +32,41 @@ export default function App() {
 ## Usage
 
 ```tsx
-import { useWatchup, useStartTrace } from "@watchupltd/react-native";
+import { useIdentify, useNavigationTracking, useScreen, useStartTrace, useTrack, useWatchup } from '@watchupltd/react-native';
 
-function CheckoutScreen() {
-  const watchup = useWatchup();
-  const startTrace = useStartTrace();
+const navigationRef = useNavigationContainerRef();
+useNavigationTracking(navigationRef); // React Navigation: screen views + route for errors
 
-  async function submit() {
-    const end = startTrace("checkout.submit");
-    try {
-      watchup.captureLog("Checkout started", { level: "info", route: "Checkout" });
-      await checkout();
-      watchup.track("checkout.completed", { plan: "pro" });
-      end({ status: "ok" });
-    } catch (err) {
-      end({ status: "err" });
-      watchup.captureError(err, { route: "Checkout" });
-    }
-  }
-}
+useScreen('Checkout');                // or record a screen manually
+useIdentify(user ? { id: user.id } : null);
+
+const track = useTrack();
+track('checkout.started', { items: 3 });
+
+const end = useStartTrace()('load cart');
+end({ status: 'ok' });
+
+useWatchup().captureError(error, { component: 'Cart' });
 ```
 
-## What v0.1 captures
+## Offline behaviour
 
-- Manual JS errors through `captureError()`
-- Global React Native JS errors through `ErrorUtils`
-- Structured logs through `captureLog()`
-- Optional console capture for `console.log/info/debug/warn/error`
-- Custom events through `track()`
-- Manual traces through `startTrace()`
-- User context through `setUser()` / `useIdentify()`
-- Device context from `react-native` `Platform` and `Dimensions`
+- Captured items are persisted (AsyncStorage by default, or any `storage` adapter with `getItem`/`setItem`/`removeItem`; `storage: null` keeps them in memory) and restored on the next launch — including retries with their original idempotency keys, so nothing is double-counted.
+- With NetInfo installed, delivery pauses while offline (without using up retry attempts) and resumes on reconnect.
+- The queue flushes when the app goes to the background and when it becomes active. Nothing blocks rendering.
+- The queue is bounded (`maxQueueSize`, default 1000): oldest events are dropped first, errors last.
 
-Native crash reporting, persisted offline queues, and navigation auto-instrumentation are planned for later releases.
+## What is captured
+
+- Uncaught JS exceptions through `ErrorUtils` (React Native's own handler still runs, so dev red boxes and release crash handling are unchanged).
+- Unhandled promise rejections (Hermes' tracker, or the `promise` polyfill's tracker on JSC).
+- Native (Java/Kotlin/Objective-C/Swift) crashes are **not** captured.
+- Device context is limited to OS, OS version, Hermes, and window size — no device name, advertising ID or IP.
+
+## Links
+
+- [React Native SDK docs](https://watchup.site/docs/sdks/react-native) · [Changelog](./CHANGELOG.md) · [Expo fixture](../fixtures/expo-app)
+
+## License
+
+MIT © Watchup Ltd

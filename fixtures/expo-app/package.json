@@ -1,0 +1,6 @@
+{
+  "name": "watchup-fixture-expo",
+  "private": true,
+  "main": "index.js",
+  "scripts": { "export": "expo export --platform android --output-dir dist" }
+}

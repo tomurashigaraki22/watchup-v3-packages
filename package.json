@@ -2,6 +2,7 @@
   "name": "watchup-sdk-packages",
   "private": true,
   "workspaces": [
+    "core",
     "node",
     "browser",
     "react",
@@ -12,8 +13,30 @@
     "react-native"
   ],
   "scripts": {
-    "build":     "npm run build --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "dev":       "npm run dev --workspaces --if-present"
+    "test": "vitest run",
+    "lint": "biome lint",
+    "check": "npm run lint && npm run build && npm run typecheck && npm test && node tools/release/check-versions.mjs && node tools/check-bundle-size.mjs",
+    "contract": "node tools/contract/run.mjs",
+    "size": "node tools/check-bundle-size.mjs",
+    "versions": "node tools/release/check-versions.mjs",
+    "dev": "npm run dev --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@playwright/test": "^1.63.0",
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/express": "^5.0.6",
+    "@types/react-dom": "^18.3.7",
+    "express": "^5.2.1",
+    "jsdom": "^25.0.1",
+    "react-dom": "^18.3.1",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=18.18"
   }
 }

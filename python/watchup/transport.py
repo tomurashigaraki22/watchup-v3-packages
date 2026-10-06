@@ -1,61 +1,62 @@
 """
 watchup · HTTP transport
 
-Posts ingest batches to the Watchup API. All failures are swallowed —
-the SDK must never crash the host application.
+Posts one chunk to the ingest API with urllib (stdlib only). Never raises:
+failures become ``SendResult`` values so the queue can decide about retries.
 """
 
 from __future__ import annotations
 
 import json
-import logging
 import urllib.error
 import urllib.request
-from typing import Any, Dict
+from typing import Dict, Optional
 
-from .types import IngestBatch
-
-log = logging.getLogger("watchup")
+from . import _contract as c
+from ._queue import SendResult
+from ._version import SDK_NAME, SDK_VERSION
 
 
 class Transport:
-    def __init__(self, base_url: str, api_key: str, debug: bool = False) -> None:
-        self._url = f"{base_url.rstrip('/')}/api/v1/ingest/batch"
-        self._headers = {
+    def __init__(self, base_url: str, api_key: str, timeout: float = 8.0) -> None:
+        self._url = f"{base_url.rstrip('/')}{c.INGEST_PATH}"
+        self._api_key = api_key
+        self._timeout = timeout
+
+    def headers(self, idempotency_key: str) -> Dict[str, str]:
+        return {
             "Content-Type": "application/json",
-            "X-Api-Key": api_key,
-            "User-Agent": "watchup-python",
+            "Authorization": f"Bearer {self._api_key}",
+            "X-Api-Key": self._api_key,
+            "Idempotency-Key": idempotency_key,
+            "User-Agent": f"{SDK_NAME}/{SDK_VERSION}",
         }
-        self._debug = debug
 
-    def send(self, batch: IngestBatch) -> bool:
-        payload: Dict[str, Any] = {}
-        if batch.traces:
-            payload["traces"] = [t.to_dict() for t in batch.traces]
-        if batch.errors:
-            payload["errors"] = [e.to_dict() for e in batch.errors]
-        if batch.events:
-            payload["events"] = [ev.to_dict() for ev in batch.events]
-
-        if not payload:
-            return True
-
+    def send(self, chunk: c.Chunk) -> SendResult:
+        request = urllib.request.Request(
+            self._url,
+            data=chunk.body.encode("utf-8", "replace"),
+            headers=self.headers(chunk.idempotency_key),
+            method="POST",
+        )
         try:
-            body = json.dumps(payload).encode()
-            req = urllib.request.Request(
-                self._url,
-                data=body,
-                headers=self._headers,
-                method="POST",
+            with urllib.request.urlopen(request, timeout=self._timeout) as resp:
+                return SendResult(ok=True, status=resp.status)
+        except urllib.error.HTTPError as exc:
+            return SendResult(
+                ok=False,
+                status=exc.code,
+                code=_error_code(exc) or ("payload_too_large" if exc.code == 413 else None),
+                retry_after_ms=c.parse_retry_after(exc.headers.get("Retry-After") if exc.headers else None),
             )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                if resp.status >= 400:
-                    if self._debug:
-                        log.warning("[watchup] ingest %s", resp.status)
-                    return False
-                return True
-        except Exception as exc:
-            if self._debug:
-                log.warning("[watchup] send failed: %s", exc)
-            # Intentionally no re-raise; the batcher will retry the batch.
-            return False
+        except Exception as exc:  # URLError, timeouts, connection resets
+            return SendResult(ok=False, error=str(exc))
+
+
+def _error_code(exc: urllib.error.HTTPError) -> Optional[str]:
+    try:
+        body = json.loads(exc.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) else None

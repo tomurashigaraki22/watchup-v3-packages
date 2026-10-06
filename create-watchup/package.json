@@ -1,24 +1,27 @@
 {
   "name": "create-watchup",
-  "version": "0.1.1",
-  "description": "Set up WatchUp SDKs in Next.js, React, Node.js, and Express projects",
+  "version": "0.2.0",
+  "description": "Set up WatchUp SDKs in Next.js, React, React Native, SvelteKit, Node.js, and Express projects",
   "license": "MIT",
   "author": "Watchup Ltd",
   "homepage": "https://watchup.site",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/watchupltd/watchup-sdk.git"
+    "url": "git+https://github.com/tomurashigaraki22/watchup-v3-packages.git",
+    "directory": "create-watchup"
   },
   "keywords": [
-    "watchup",
-    "observability",
+    "cli",
+    "express",
     "monitoring",
     "nextjs",
-    "react",
-    "express",
     "nodejs",
+    "observability",
+    "react",
+    "react-native",
     "setup",
-    "cli"
+    "sveltekit",
+    "watchup"
   ],
   "bin": {
     "create-watchup": "bin/create-watchup.js"
@@ -32,7 +35,8 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "node --check bin/create-watchup.js && node --check src/index.js && node --check src/detect.js && node --check src/package-manager.js && node --check src/prompts.js && node --check src/installers/next.js && node --check src/installers/react.js && node --check src/installers/react-native.js && node --check src/installers/node.js && node --check src/installers/express.js",
-    "typecheck": "npm run build"
+    "build": "node --check bin/create-watchup.js && node --check src/index.js && node --check src/detect.js && node --check src/package-manager.js && node --check src/prompts.js && node --check src/installers/utils.js && node --check src/installers/next.js && node --check src/installers/react.js && node --check src/installers/react-native.js && node --check src/installers/svelte.js && node --check src/installers/node.js && node --check src/installers/express.js",
+    "typecheck": "npm run build",
+    "test": "vitest run --root .. --project create-watchup"
   }
 }

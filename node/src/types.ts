@@ -2,6 +2,18 @@
 // @watchupltd/node  ·  types
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { Diagnostic } from '@watchupltd/core';
+
+export type {
+  Diagnostic,
+  DiagnosticType,
+  FlushResult,
+  FeatureFlag,
+  FlagContext,
+  FlagVariant,
+  FlagTargetingRule,
+} from '@watchupltd/core';
+
 export interface WatchupUser {
   id: string | number;
   email?: string;
@@ -48,10 +60,48 @@ export interface WatchupOptions {
   flushInterval?: number;
 
   /**
-   * Maximum number of items of each type to hold before forcing a flush.
+   * Maximum items per request (capped at the server's 100).
    * Default: `100`.
    */
   maxBatchSize?: number;
+
+  /**
+   * Maximum items held in memory while the API is unreachable. The oldest
+   * events are dropped first, errors last. Default: `1000`.
+   */
+  maxQueueSize?: number;
+
+  /** Extra keys to redact in captured context, on top of the built-in list. */
+  redactKeys?: string[];
+
+  /** Service name attached to traces, errors and logs (e.g. `"api"`). */
+  service?: string;
+
+  /**
+   * Called for SDK delivery diagnostics (truncation, retries, drops).
+   * Never receives captured data or keys.
+   */
+  onDiagnostic?: (diagnostic: Diagnostic) => void;
+
+  /**
+   * Flush on SIGTERM/SIGINT and `beforeExit`. If your app has its own signal
+   * handlers they still decide when to exit; otherwise WatchUp re-raises the
+   * signal after flushing. Default: `true`.
+   */
+  handleSignals?: boolean;
+
+  /**
+   * Capture `uncaughtException` and `unhandledRejection`, flush for up to
+   * `shutdownTimeout`, then exit with code 1 (Node's default behaviour).
+   * Default: `false`.
+   */
+  captureUnhandled?: boolean;
+
+  /** Max ms to wait for delivery during shutdown. Default: `5000`. */
+  shutdownTimeout?: number;
+
+  /** Feature-flag refresh interval in ms. Default: `30000`. `0` disables polling. */
+  flagRefreshInterval?: number;
 
   /**
    * Log SDK warnings and HTTP errors to `console.warn`.
@@ -87,6 +137,8 @@ export interface WatchupOptions {
 export interface TracePayload {
   /** Human-readable span name, e.g. `"GET /api/users/:id"`. */
   span: string;
+  /** Trace kind. `"http"` for requests, `"db"` for queries, `"custom"` otherwise. */
+  type?: 'http' | 'function' | 'db' | 'custom';
   /** End-to-end duration in milliseconds. */
   ms: number;
   /** HTTP status code, or a synthetic code for non-HTTP spans (200/400/500). */
@@ -106,6 +158,8 @@ export interface TracePayload {
 export interface ErrorPayload {
   /** Error message string. */
   message: string;
+  /** Error class name, e.g. `"TypeError"`. */
+  type?: string;
   /** Severity level. */
   level: 'debug' | 'info' | 'warning' | 'error' | 'fatal';
   /** Route that produced the error, e.g. `"POST /api/orders"`. */
@@ -143,31 +197,11 @@ export type LogContext = Record<string, unknown> & {
   route?: string;
 };
 
-export interface FlagContext {
-  userId?: string | number;
-  email?: string;
-  plan?: string;
-  [key: string]: unknown;
-}
-
-export interface FlagVariant {
-  key: string;
-  weight: number;
-}
-
-export interface FlagTargetingRule {
-  attribute: string;
-  operator: 'in' | 'not_in' | 'contains' | 'equals';
-  values: string[];
-}
-
-export interface FeatureFlag {
-  id: string;
-  key: string;
-  name: string;
-  description?: string;
-  enabled: boolean;
-  rollout_percentage: number;
-  variants: FlagVariant[];
-  targeting_rules: FlagTargetingRule[];
+/** Per-request context kept in AsyncLocalStorage. */
+export interface RequestContext {
+  requestId: string;
+  traceId?: string;
+  method?: string;
+  route?: string;
+  user: WatchupUser | null;
 }

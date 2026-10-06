@@ -1,31 +1,45 @@
-import type { IngestBatch } from './types.js';
+// ─────────────────────────────────────────────────────────────────────────────
+// @watchupltd/react-native  ·  transport
+//
+// fetch with an AbortController timeout (Hermes has no AbortSignal.timeout).
+// React Native has no CORS, so the Idempotency-Key header is sent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { INGEST_PATH, ingestHeaders, toSendResult, type Chunk, type SendResult } from '@watchupltd/core';
+import { SDK_NAME, SDK_VERSION } from './version.js';
 
 export class Transport {
+  private readonly url: string;
+
   constructor(
-    private readonly baseUrl: string,
+    baseUrl: string,
     private readonly apiKey: string,
-    private readonly debug = false,
-  ) {}
+    private readonly timeoutMs = 10_000,
+  ) {
+    this.url = `${baseUrl.replace(/\/+$/, '')}${INGEST_PATH}`;
+  }
 
-  async sendBatch(batch: IngestBatch): Promise<void> {
-    const hasItems = Boolean(batch.errors?.length || batch.events?.length || batch.traces?.length);
-    if (!hasItems) return;
-
+  async send(chunk: Chunk): Promise<SendResult> {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
     try {
-      const res = await fetch(`${this.baseUrl}/api/v1/ingest/batch`, {
+      const res = await fetch(this.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Key': this.apiKey,
-        },
-        body: JSON.stringify(batch),
+        headers: ingestHeaders({
+          apiKey: this.apiKey,
+          sdk: { name: SDK_NAME, version: SDK_VERSION },
+          idempotencyKey: chunk.idempotencyKey,
+          includeIdempotencyHeader: true,
+          includeUserAgent: true,
+        }),
+        body: chunk.body,
+        ...(controller && { signal: controller.signal }),
       });
-
-      if (!res.ok && this.debug) {
-        console.warn('[watchup] batch send failed', res.status, await res.text().catch(() => ''));
-      }
-    } catch (error) {
-      if (this.debug) console.warn('[watchup] batch send failed', error);
+      return await toSendResult(res);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 }

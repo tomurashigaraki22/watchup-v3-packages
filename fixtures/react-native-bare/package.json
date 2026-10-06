@@ -1,0 +1,8 @@
+{
+  "name": "watchup-fixture-rn-bare",
+  "private": true,
+  "scripts": {
+    "bundle": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output out/index.android.bundle --assets-dest out",
+    "hermes": "node hermes.mjs"
+  }
+}

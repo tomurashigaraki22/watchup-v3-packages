@@ -1,4 +1,5 @@
 export { Watchup } from './watchup.js';
+export { SDK_NAME, SDK_VERSION } from './version.js';
 export type {
   WatchupOptions,
   WatchupUser,
@@ -13,4 +14,9 @@ export type {
   FlagContext,
   FlagVariant,
   FlagTargetingRule,
+  WebAnalyticsPayload,
+  WebAnalyticsBatch,
+  Diagnostic,
+  DiagnosticType,
+  FlushResult,
 } from './types.js';

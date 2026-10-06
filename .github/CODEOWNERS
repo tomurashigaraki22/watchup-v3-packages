@@ -1,0 +1,16 @@
+# Package owners (SDK plan Phase A.4). See docs/GOVERNANCE.md.
+*                    @tomurashigaraki22
+/spec/               @tomurashigaraki22
+/core/               @tomurashigaraki22
+/browser/            @tomurashigaraki22
+/node/               @tomurashigaraki22
+/react/              @tomurashigaraki22
+/nextjs/             @tomurashigaraki22
+/svelte/             @tomurashigaraki22
+/react-native/       @tomurashigaraki22
+/mcp/                @tomurashigaraki22
+/create-watchup/     @tomurashigaraki22
+/python/             @tomurashigaraki22
+/go/                 @tomurashigaraki22
+/dotnet/             @tomurashigaraki22
+/.github/            @tomurashigaraki22

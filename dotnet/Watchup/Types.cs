@@ -98,19 +98,3 @@ public sealed class EventPayload
     [JsonPropertyName("occurred_at")]
     public string OccurredAt { get; set; } = string.Empty;
 }
-
-/// <summary>Shape of a single HTTP batch request body sent to the ingest endpoint.</summary>
-internal sealed class IngestBatch
-{
-    [JsonPropertyName("traces")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<TracePayload>? Traces { get; set; }
-
-    [JsonPropertyName("errors")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<ErrorPayload>? Errors { get; set; }
-
-    [JsonPropertyName("events")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<EventPayload>? Events { get; set; }
-}
