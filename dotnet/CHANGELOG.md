@@ -1,5 +1,11 @@
 # Changelog — Watchup (.NET)
 
+## 1.1.1
+
+- Release the current contract-aligned .NET SDK implementation, including the
+  delivery queue, request-scoped user context, database query tracing, and
+  diagnostics APIs.
+
 ## 1.1.0
 
 ### Added

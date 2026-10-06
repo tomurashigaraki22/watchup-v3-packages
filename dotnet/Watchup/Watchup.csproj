@@ -17,7 +17,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Watchup</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>Watchup</Authors>
     <Description>Official .NET SDK for Watchup — request tracing, error capture, and custom event tracking for ASP.NET Core applications.</Description>
     <PackageTags>watchup;monitoring;tracing;errors;apm;observability</PackageTags>

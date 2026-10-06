@@ -26,7 +26,7 @@ public sealed class WatchupClient : IAsyncDisposable
     public const string SdkName = "watchup-dotnet";
 
     /// <summary>sdk.version sent in every envelope.</summary>
-    public const string SdkVersion = "1.1.0";
+    public const string SdkVersion = "1.1.1";
 
     private readonly WatchupOptions _opts;
     private readonly DeliveryQueue _queue;
